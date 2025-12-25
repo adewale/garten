@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Garten Demo - 147 Plant Types</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #fff;
+      min-height: 100vh;
+    }
+
+    #garden {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: -1;
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 40px;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+      color: #333;
+    }
+
+    .subtitle {
+      font-size: 1.1rem;
+      color: #F6821F;
+      margin-bottom: 1.5rem;
+      font-weight: 500;
+    }
+
+    p {
+      font-size: 1.1rem;
+      line-height: 1.7;
+      color: #555;
+      margin-bottom: 1.5rem;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin: 1.5rem 0;
+      padding: 1.5rem;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 8px;
+      background: #F6821F;
+      color: white;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    button:hover {
+      background: #E66A0B;
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    button.secondary {
+      background: #666;
+    }
+
+    button.secondary:hover {
+      background: #555;
+    }
+
+    button.scene-btn {
+      background: #4A90A4;
+      padding: 8px 16px;
+      font-size: 0.9rem;
+    }
+
+    button.scene-btn:hover {
+      background: #3A7A94;
+    }
+
+    button.scene-btn.active {
+      background: #F6821F;
+    }
+
+    .status {
+      width: 100%;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid #eee;
+      font-size: 0.9rem;
+      color: #888;
+    }
+
+    select, input[type="color"] {
+      padding: 10px 16px;
+      font-size: 1rem;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      background: white;
+      cursor: pointer;
+    }
+
+    input[type="color"] {
+      width: 50px;
+      height: 42px;
+      padding: 2px;
+    }
+
+    input[type="range"] {
+      width: 100px;
+      cursor: pointer;
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: #666;
+    }
+
+    .params-section {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin: 1.5rem 0;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    .params-section h3 {
+      font-size: 1.1rem;
+      color: #333;
+      margin-bottom: 1rem;
+    }
+
+    .params-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+    }
+
+    .scene-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 1rem;
+    }
+
+    .category-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px;
+    }
+
+    .category-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      background: #f8f8f8;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .category-item:hover {
+      background: #eee;
+    }
+
+    .category-item input {
+      cursor: pointer;
+    }
+
+    .category-item.tall {
+      background: #e8f4e8;
+    }
+
+    .category-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .category-actions button {
+      padding: 6px 12px;
+      font-size: 0.85rem;
+      background: #888;
+    }
+
+    .config-display {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 1rem;
+      border-radius: 8px;
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .config-display .key {
+      color: #9cdcfe;
+    }
+
+    .config-display .string {
+      color: #ce9178;
+    }
+
+    .config-display .number {
+      color: #b5cea8;
+    }
+
+    .config-display .bracket {
+      color: #ffd700;
+    }
+
+    .copy-btn {
+      margin-top: 8px;
+      padding: 6px 12px;
+      font-size: 0.85rem;
+      background: #555;
+    }
+
+    code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'SF Mono', Monaco, monospace;
+      font-size: 0.9rem;
+    }
+
+    .section-description {
+      font-size: 0.9rem;
+      color: #666;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div id="garden"></div>
+
+  <div class="content">
+    <h1>Garten</h1>
+    <p class="subtitle">147 Plant Types | Canvas Animation Library</p>
+
+    <p>
+      A beautiful, animated garden with <strong>147 distinct plant types</strong> across 19 categories:
+      flowers, tulips, daisies, wildflowers, grasses, ferns, bushes, roses, lilies, orchids,
+      succulents, herbs, specialty flowers, tall flowers, giant grasses, climbers, small trees, tropical plants, and conifers.
+    </p>
+
+    <!-- Scenes Section -->
+    <div class="params-section">
+      <h3>Scenes</h3>
+      <p class="section-description">Click a scene to apply its configuration. View the config below to copy it.</p>
+      <div class="scene-grid" id="sceneGrid">
+        <!-- Scene buttons will be generated by JavaScript -->
+      </div>
+    </div>
+
+    <!-- Playback Controls -->
+    <div class="controls">
+      <button id="playBtn">Play</button>
+      <button id="pauseBtn" class="secondary">Pause</button>
+      <button id="stopBtn" class="secondary">Stop</button>
+      <button id="regenBtn" class="secondary">Regenerate</button>
+
+      <select id="speedSelect">
+        <option value="0.5">0.5x</option>
+        <option value="1" selected>1x</option>
+        <option value="2">2x</option>
+        <option value="5">5x</option>
+        <option value="10">10x</option>
+        <option value="20">20x</option>
+      </select>
+
+      <select id="densitySelect">
+        <option value="sparse">Sparse</option>
+        <option value="normal" selected>Normal</option>
+        <option value="dense">Dense</option>
+        <option value="lush">Lush</option>
+      </select>
+
+      <select id="timingCurveSelect">
+        <option value="linear" selected>Linear</option>
+        <option value="ease-out">Ease Out (fast start)</option>
+        <option value="ease-in">Ease In (slow start)</option>
+        <option value="ease-in-out">Ease In-Out</option>
+      </select>
+
+      <select id="durationSelect">
+        <option value="30">30 sec</option>
+        <option value="60">1 min</option>
+        <option value="120" selected>2 min</option>
+        <option value="300">5 min</option>
+        <option value="600">10 min</option>
+      </select>
+
+      <label>
+        Accent:
+        <input type="color" id="accentColor" value="#F6821F">
+      </label>
+
+      <label>
+        Seed:
+        <input type="number" id="seedInput" placeholder="random" style="width: 80px; padding: 8px; border: 2px solid #ddd; border-radius: 6px;">
+      </label>
+
+      <label>
+        Height:
+        <input type="range" id="heightSlider" min="10" max="100" value="35">
+        <span id="heightValue">35%</span>
+      </label>
+
+      <label>
+        Seek:
+        <input type="range" id="seekSlider" min="0" max="100" value="0">
+      </label>
+
+      <div class="status">
+        <span id="stateDisplay">State: idle</span> ·
+        <span id="progressDisplay">Progress: 0%</span> ·
+        <span id="genDisplay">Generation: 0/47</span> ·
+        <span id="plantCount">Plants: 0</span>
+      </div>
+    </div>
+
+    <!-- Category Filter Section -->
+    <div class="params-section">
+      <h3>Plant Categories</h3>
+      <p class="section-description">Select which plant categories to include. Tall categories (green) require higher maxHeight settings.</p>
+      <div class="category-actions">
+        <button id="selectAllBtn">Select All</button>
+        <button id="selectNoneBtn">Select None</button>
+        <button id="selectGroundBtn">Ground Only</button>
+        <button id="selectTallBtn">Tall Only</button>
+      </div>
+      <div class="category-grid" id="categoryGrid">
+        <!-- Category checkboxes will be generated by JavaScript -->
+      </div>
+    </div>
+
+    <!-- Current Config Display -->
+    <div class="params-section">
+      <h3>Current Configuration</h3>
+      <p class="section-description">Copy this config to recreate this exact garden.</p>
+      <div class="config-display" id="configDisplay"></div>
+      <button class="copy-btn" id="copyConfigBtn">Copy Config</button>
+    </div>
+
+    <!-- API Reference -->
+    <div class="params-section">
+      <h3>Methods</h3>
+      <p style="margin-bottom: 0;">
+        <code>play()</code>, <code>pause()</code>, <code>stop()</code>,
+        <code>seek(time)</code>, <code>setSpeed(n)</code>, <code>setOptions({})</code>,
+        <code>regenerate()</code>, <code>destroy()</code>
+      </p>
+    </div>
+
+    <div class="params-section">
+      <h3>Getters</h3>
+      <p style="margin-bottom: 0;">
+        <code>getState()</code>, <code>getProgress()</code>, <code>getElapsedTime()</code>
+      </p>
+    </div>
+  </div>
+
+  <script src="./dist/index.global.js"></script>
+  <script>
+    // All available categories
+    const PLANT_CATEGORIES = Garten.PLANT_CATEGORIES;
+
+    // Ground-level categories (available at low maxHeight)
+    const GROUND_CATEGORIES = [
+      'simple-flower', 'tulip', 'daisy', 'wildflower', 'grass', 'fern',
+      'bush', 'rose', 'lily', 'orchid', 'succulent', 'herb', 'specialty'
+    ];
+
+    // Tall categories (require high maxHeight)
+    const TALL_CATEGORIES = [
+      'tall-flower', 'giant-grass', 'climber', 'small-tree', 'tropical', 'conifer'
+    ];
+
+    // Scene presets
+    const SCENES = {
+      'Default Garden': {
+        description: 'A balanced garden with the default settings',
+        config: {
+          maxHeight: 0.35,
+          density: 'normal',
+          categories: null, // all
+          colors: { accent: '#F6821F', palette: 'natural' }
+        }
+      },
+      'Orange Garden': {
+        description: 'Cloudflare orange as the dominant flower color',
+        config: {
+          maxHeight: 0.45,
+          density: 'dense',
+          categories: ['simple-flower', 'tulip', 'daisy', 'rose', 'lily', 'specialty', 'wildflower'],
+          colors: { accent: '#F6821F', palette: 'warm', accentWeight: 0.7 }
+        }
+      },
+      'Tidy Border': {
+        description: 'Low, neat plants perfect for borders',
+        config: {
+          maxHeight: 0.2,
+          density: 'dense',
+          categories: ['grass', 'succulent', 'herb', 'fern', 'daisy'],
+          colors: { accent: '#8B4513', palette: 'natural' }
+        }
+      },
+      'Wildflower Meadow': {
+        description: 'A meadow of wildflowers and grasses',
+        config: {
+          maxHeight: 0.3,
+          density: 'lush',
+          categories: ['wildflower', 'grass', 'daisy', 'simple-flower'],
+          colors: { accent: '#FFD700', palette: 'vibrant' }
+        }
+      },
+      'English Cottage': {
+        description: 'Classic cottage garden with roses and lavender',
+        config: {
+          maxHeight: 0.4,
+          density: 'dense',
+          categories: ['rose', 'lavender', 'specialty', 'tulip', 'lily'],
+          colors: { accent: '#E91E63', palette: 'warm' }
+        }
+      },
+      'Tropical Paradise': {
+        description: 'Lush tropical plants and palms',
+        config: {
+          maxHeight: 0.85,
+          density: 'dense',
+          categories: ['tropical', 'giant-grass', 'fern', 'orchid', 'bird-of-paradise'],
+          colors: { accent: '#FF6B35', palette: 'vibrant' }
+        }
+      },
+      'Japanese Garden': {
+        description: 'Serene bamboo and cherry blossoms',
+        config: {
+          maxHeight: 0.8,
+          density: 'sparse',
+          categories: ['giant-grass', 'small-tree', 'fern', 'grass'],
+          colors: { accent: '#FFB7C5', palette: 'cool' }
+        }
+      },
+      'Overgrown Forest': {
+        description: 'Full height with only the tallest plants',
+        config: {
+          maxHeight: 1.0,
+          density: 'lush',
+          categories: ['small-tree', 'conifer', 'climber', 'giant-grass'],
+          colors: { accent: '#228B22', palette: 'natural' }
+        }
+      },
+      'Minimalist': {
+        description: 'Sparse, clean arrangement',
+        config: {
+          maxHeight: 0.15,
+          density: 'sparse',
+          categories: ['grass', 'succulent'],
+          colors: { accent: '#607D8B', palette: 'monochrome' }
+        }
+      }
+    };
+
+    // Current configuration state
+    let currentConfig = {
+      duration: 120,
+      maxHeight: 0.35,
+      density: 'normal',
+      categories: null,
+      colors: {
+        accent: '#F6821F',
+        palette: 'natural',
+        accentWeight: 0.4,
+      },
+      timingCurve: 'linear'
+    };
+
+    // Selected categories (null = all)
+    let selectedCategories = null;
+
+    // Create garden instance
+    const garden = new Garten.Garten({
+      container: '#garden',
+      ...currentConfig,
+      autoplay: false,
+      events: {
+        onStateChange: (state) => {
+          document.getElementById('stateDisplay').textContent = `State: ${state}`;
+        },
+        onProgress: (progress, elapsed) => {
+          document.getElementById('progressDisplay').textContent = `Progress: ${(progress * 100).toFixed(1)}%`;
+          if (document.activeElement !== document.getElementById('seekSlider')) {
+            document.getElementById('seekSlider').value = progress * 100;
+          }
+        },
+        onGenerationComplete: (gen, total) => {
+          document.getElementById('genDisplay').textContent = `Generation: ${gen}/${total}`;
+        },
+        onComplete: () => {
+          console.log('Garden complete!');
+        }
+      }
+    });
+
+    // Generate scene buttons
+    function generateSceneButtons() {
+      const grid = document.getElementById('sceneGrid');
+      grid.innerHTML = '';
+
+      for (const [name, scene] of Object.entries(SCENES)) {
+        const btn = document.createElement('button');
+        btn.className = 'scene-btn';
+        btn.textContent = name;
+        btn.title = scene.description;
+        btn.onclick = () => applyScene(name);
+        grid.appendChild(btn);
+      }
+    }
+
+    // Generate category checkboxes
+    function generateCategoryCheckboxes() {
+      const grid = document.getElementById('categoryGrid');
+      grid.innerHTML = '';
+
+      for (const category of PLANT_CATEGORIES) {
+        const label = document.createElement('label');
+        label.className = 'category-item' + (TALL_CATEGORIES.includes(category) ? ' tall' : '');
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = true;
+        checkbox.value = category;
+        checkbox.onchange = updateCategoriesFromCheckboxes;
+
+        const text = document.createTextNode(category);
+
+        label.appendChild(checkbox);
+        label.appendChild(text);
+        grid.appendChild(label);
+      }
+    }
+
+    // Update categories from checkbox state
+    function updateCategoriesFromCheckboxes() {
+      const checkboxes = document.querySelectorAll('#categoryGrid input[type="checkbox"]');
+      const checked = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+
+      if (checked.length === PLANT_CATEGORIES.length) {
+        selectedCategories = null; // All selected = no filter
+      } else if (checked.length === 0) {
+        selectedCategories = ['simple-flower']; // Fallback to at least one
+      } else {
+        selectedCategories = checked;
+      }
+
+      currentConfig.categories = selectedCategories;
+      garden.setOptions({ categories: selectedCategories });
+      updateConfigDisplay();
+    }
+
+    // Set checkbox states
+    function setCheckboxes(categories) {
+      const checkboxes = document.querySelectorAll('#categoryGrid input[type="checkbox"]');
+      checkboxes.forEach(cb => {
+        cb.checked = categories === null || categories.includes(cb.value);
+      });
+    }
+
+    // Apply a scene
+    function applyScene(name) {
+      const scene = SCENES[name];
+      if (!scene) return;
+
+      // Update current config
+      currentConfig = {
+        ...currentConfig,
+        ...scene.config,
+        colors: { ...currentConfig.colors, ...scene.config.colors }
+      };
+      selectedCategories = scene.config.categories;
+
+      // Apply to garden
+      garden.setOptions(scene.config);
+
+      // Update UI
+      document.getElementById('heightSlider').value = scene.config.maxHeight * 100;
+      document.getElementById('heightValue').textContent = `${Math.round(scene.config.maxHeight * 100)}%`;
+
+      if (scene.config.density) {
+        document.getElementById('densitySelect').value = scene.config.density;
+      }
+
+      if (scene.config.colors?.accent) {
+        document.getElementById('accentColor').value = scene.config.colors.accent;
+      }
+
+      setCheckboxes(scene.config.categories);
+      updateConfigDisplay();
+      highlightActiveScene(name);
+    }
+
+    // Highlight active scene button
+    function highlightActiveScene(name) {
+      document.querySelectorAll('.scene-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.textContent === name);
+      });
+    }
+
+    // Update config display
+    function updateConfigDisplay() {
+      const display = document.getElementById('configDisplay');
+      const config = {
+        container: "'#garden'",
+        ...currentConfig
+      };
+
+      // Format config as pretty code
+      let html = '<span class="bracket">{</span>\n';
+      html += formatConfigObject(config, 1);
+      html += '<span class="bracket">}</span>';
+
+      display.innerHTML = html;
+    }
+
+    function formatConfigObject(obj, indent) {
+      let html = '';
+      const spaces = '  '.repeat(indent);
+
+      for (const [key, value] of Object.entries(obj)) {
+        if (value === undefined) continue;
+
+        html += `${spaces}<span class="key">${key}</span>: `;
+
+        if (value === null) {
+          html += '<span class="number">null</span>,\n';
+        } else if (typeof value === 'string') {
+          html += `<span class="string">'${value}'</span>,\n`;
+        } else if (typeof value === 'number') {
+          html += `<span class="number">${value}</span>,\n`;
+        } else if (Array.isArray(value)) {
+          html += '<span class="bracket">[</span>';
+          html += value.map(v => `<span class="string">'${v}'</span>`).join(', ');
+          html += '<span class="bracket">]</span>,\n';
+        } else if (typeof value === 'object') {
+          html += '<span class="bracket">{</span>\n';
+          html += formatConfigObject(value, indent + 1);
+          html += `${spaces}<span class="bracket">}</span>,\n`;
+        }
+      }
+
+      return html;
+    }
+
+    // Copy config to clipboard
+    document.getElementById('copyConfigBtn').onclick = () => {
+      const config = {
+        container: '#garden',
+        ...currentConfig
+      };
+      const text = JSON.stringify(config, null, 2);
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copyConfigBtn');
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy Config', 2000);
+      });
+    };
+
+    // Category action buttons
+    document.getElementById('selectAllBtn').onclick = () => {
+      setCheckboxes(null);
+      updateCategoriesFromCheckboxes();
+    };
+
+    document.getElementById('selectNoneBtn').onclick = () => {
+      setCheckboxes([]);
+      updateCategoriesFromCheckboxes();
+    };
+
+    document.getElementById('selectGroundBtn').onclick = () => {
+      setCheckboxes(GROUND_CATEGORIES);
+      updateCategoriesFromCheckboxes();
+    };
+
+    document.getElementById('selectTallBtn').onclick = () => {
+      setCheckboxes(TALL_CATEGORIES);
+      // Also set maxHeight to 1.0 for tall plants
+      document.getElementById('heightSlider').value = 100;
+      document.getElementById('heightValue').textContent = '100%';
+      currentConfig.maxHeight = 1.0;
+      garden.setOptions({ maxHeight: 1.0 });
+      updateCategoriesFromCheckboxes();
+    };
+
+    // Playback controls
+    document.getElementById('playBtn').onclick = () => garden.play();
+    document.getElementById('pauseBtn').onclick = () => garden.pause();
+    document.getElementById('stopBtn').onclick = () => garden.stop();
+    document.getElementById('regenBtn').onclick = () => {
+      garden.regenerate();
+      updateConfigDisplay();
+    };
+
+    document.getElementById('speedSelect').onchange = (e) => {
+      garden.setSpeed(parseFloat(e.target.value));
+    };
+
+    document.getElementById('densitySelect').onchange = (e) => {
+      currentConfig.density = e.target.value;
+      garden.setOptions({ density: e.target.value });
+      updateConfigDisplay();
+    };
+
+    document.getElementById('timingCurveSelect').onchange = (e) => {
+      currentConfig.timingCurve = e.target.value;
+      garden.setOptions({ timingCurve: e.target.value });
+      updateConfigDisplay();
+    };
+
+    document.getElementById('durationSelect').onchange = (e) => {
+      currentConfig.duration = parseInt(e.target.value);
+      garden.setOptions({ duration: currentConfig.duration });
+      updateConfigDisplay();
+    };
+
+    document.getElementById('accentColor').onchange = (e) => {
+      currentConfig.colors.accent = e.target.value;
+      garden.setOptions({ colors: { accent: e.target.value } });
+      updateConfigDisplay();
+    };
+
+    document.getElementById('seedInput').onchange = (e) => {
+      const seed = e.target.value ? parseInt(e.target.value) : Math.random() * 100000;
+      currentConfig.seed = seed;
+      garden.setOptions({ seed });
+      updateConfigDisplay();
+    };
+
+    document.getElementById('heightSlider').oninput = (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('heightValue').textContent = `${value}%`;
+      currentConfig.maxHeight = value / 100;
+      garden.setOptions({ maxHeight: value / 100 });
+      updateConfigDisplay();
+    };
+
+    document.getElementById('seekSlider').oninput = (e) => {
+      const time = (e.target.value / 100) * currentConfig.duration;
+      garden.seek(time);
+    };
+
+    // Initialize
+    generateSceneButtons();
+    generateCategoryCheckboxes();
+    updateConfigDisplay();
+    garden.seek(0);
+  </script>
+</body>
+</html>
