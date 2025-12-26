@@ -152,10 +152,11 @@ describe('EventEmitter', () => {
 });
 
 describe('SimpleEventEmitter', () => {
-  interface TestEvents {
+  type TestEvents = {
+    [key: string]: unknown;
     message: string;
     count: number;
-  }
+  };
 
   it('should work with custom event types', () => {
     const emitter = new SimpleEventEmitter<TestEvents>();

@@ -311,6 +311,43 @@ export class GrowthProgress {
   }
 
   /**
+   * Check if this growth progress equals another
+   */
+  equals(other: GrowthProgress): boolean {
+    return (
+      this._progress === other._progress &&
+      this._stem === other._stem &&
+      this._leaf === other._leaf &&
+      this._flower === other._flower &&
+      this._foliage === other._foliage &&
+      this._plume === other._plume
+    );
+  }
+
+  /**
+   * Check if this growth progress is approximately equal to another
+   * @param other GrowthProgress to compare with
+   * @param epsilon Maximum difference allowed (default 0.0001)
+   */
+  approximatelyEquals(other: GrowthProgress, epsilon: number = 0.0001): boolean {
+    return (
+      Math.abs(this._progress - other._progress) < epsilon &&
+      Math.abs(this._stem - other._stem) < epsilon &&
+      Math.abs(this._leaf - other._leaf) < epsilon &&
+      Math.abs(this._flower - other._flower) < epsilon &&
+      Math.abs(this._foliage - other._foliage) < epsilon &&
+      Math.abs(this._plume - other._plume) < epsilon
+    );
+  }
+
+  /**
+   * Clone this growth progress
+   */
+  clone(): GrowthProgress {
+    return GrowthProgress.fromProgress(this._progress);
+  }
+
+  /**
    * String representation
    */
   toString(): string {

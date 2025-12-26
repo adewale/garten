@@ -402,6 +402,28 @@ export class Color {
   }
 
   /**
+   * Check if this color is approximately equal to another
+   * Useful for comparing colors after manipulation
+   * @param other Color to compare with
+   * @param tolerance Maximum difference allowed per channel (0-255 for RGB, 0-1 for alpha)
+   */
+  approximatelyEquals(other: Color, tolerance: number = 1): boolean {
+    return (
+      Math.abs(this._r - other._r) <= tolerance &&
+      Math.abs(this._g - other._g) <= tolerance &&
+      Math.abs(this._b - other._b) <= tolerance &&
+      Math.abs(this._a - other._a) <= tolerance / 255
+    );
+  }
+
+  /**
+   * Clone this color
+   */
+  clone(): Color {
+    return new Color(this._r, this._g, this._b, this._a);
+  }
+
+  /**
    * Get a string representation
    */
   toString(): string {

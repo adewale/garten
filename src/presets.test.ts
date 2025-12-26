@@ -24,7 +24,7 @@ describe('themes', () => {
   });
 
   it('should have required properties on all themes', () => {
-    for (const [name, theme] of Object.entries(themes)) {
+    for (const [_name, theme] of Object.entries(themes)) {
       expect(theme.name).toBeDefined();
       expect(theme.palette).toBeDefined();
     }
@@ -47,7 +47,7 @@ describe('presets', () => {
   });
 
   it('should have required properties on all presets', () => {
-    for (const [name, preset] of Object.entries(presets)) {
+    for (const [_name, preset] of Object.entries(presets)) {
       expect(preset.name).toBeDefined();
       expect(preset.options).toBeDefined();
     }
@@ -75,7 +75,7 @@ describe('applyTheme', () => {
 
   it('should handle unknown theme', () => {
     const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const options = applyTheme('unknown-theme');
+    applyTheme('unknown-theme');
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
@@ -105,7 +105,7 @@ describe('applyPreset', () => {
 
   it('should handle unknown preset', () => {
     const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const options = applyPreset('unknown-preset');
+    applyPreset('unknown-preset');
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
   });

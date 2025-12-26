@@ -240,6 +240,40 @@ describe('Color', () => {
     });
   });
 
+  describe('approximatelyEquals', () => {
+    it('should return true for colors within tolerance', () => {
+      const a = new Color(255, 128, 64);
+      const b = new Color(254, 129, 63);
+      expect(a.approximatelyEquals(b, 2)).toBe(true);
+    });
+
+    it('should return false for colors outside tolerance', () => {
+      const a = new Color(255, 128, 64);
+      const b = new Color(250, 128, 64);
+      expect(a.approximatelyEquals(b, 2)).toBe(false);
+    });
+
+    it('should use default tolerance of 1', () => {
+      const a = new Color(255, 128, 64);
+      const b = new Color(254, 128, 64);
+      expect(a.approximatelyEquals(b)).toBe(true);
+    });
+  });
+
+  describe('clone', () => {
+    it('should create an identical copy', () => {
+      const original = new Color(255, 128, 64, 0.5);
+      const cloned = original.clone();
+      expect(cloned.equals(original)).toBe(true);
+    });
+
+    it('should not be the same reference', () => {
+      const original = new Color(255, 128, 64);
+      const cloned = original.clone();
+      expect(cloned).not.toBe(original);
+    });
+  });
+
   describe('static constants', () => {
     it('should have correct WHITE', () => {
       expect(Color.WHITE.r).toBe(255);

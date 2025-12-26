@@ -149,6 +149,57 @@ describe('GrowthProgress', () => {
       expect(growth.stem).toBe(1); // 0.5 * 2.0, capped at 1
     });
   });
+
+  describe('equals', () => {
+    it('should return true for identical progress', () => {
+      const a = GrowthProgress.fromProgress(0.5);
+      const b = GrowthProgress.fromProgress(0.5);
+      expect(a.equals(b)).toBe(true);
+    });
+
+    it('should return false for different progress', () => {
+      const a = GrowthProgress.fromProgress(0.5);
+      const b = GrowthProgress.fromProgress(0.6);
+      expect(a.equals(b)).toBe(false);
+    });
+  });
+
+  describe('approximatelyEquals', () => {
+    it('should return true for progress within epsilon', () => {
+      const a = GrowthProgress.fromProgress(0.5);
+      const b = GrowthProgress.fromProgress(0.50005);
+      expect(a.approximatelyEquals(b, 0.001)).toBe(true);
+    });
+
+    it('should return false for progress outside epsilon', () => {
+      const a = GrowthProgress.fromProgress(0.5);
+      const b = GrowthProgress.fromProgress(0.51);
+      expect(a.approximatelyEquals(b, 0.001)).toBe(false);
+    });
+  });
+
+  describe('clone', () => {
+    it('should create an identical copy', () => {
+      const original = GrowthProgress.fromProgress(0.75);
+      const cloned = original.clone();
+      expect(cloned.equals(original)).toBe(true);
+    });
+
+    it('should not be the same reference', () => {
+      const original = GrowthProgress.fromProgress(0.5);
+      const cloned = original.clone();
+      expect(cloned).not.toBe(original);
+    });
+  });
+
+  describe('toString', () => {
+    it('should return readable representation', () => {
+      const growth = GrowthProgress.fromProgress(0.5);
+      const str = growth.toString();
+      expect(str).toContain('GrowthProgress');
+      expect(str).toContain('0.50');
+    });
+  });
 });
 
 describe('calculateGrowthPhases', () => {
