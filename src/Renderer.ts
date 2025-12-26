@@ -1,6 +1,7 @@
 import type { PlantData, ResolvedOptions } from './types';
 import { drawPlant } from './plants';
 import { getPixelRatio, debounce, hexToRgb, DebouncedFunction } from './utils';
+import { GrowthProgressPool } from './GrowthProgressPool';
 
 /**
  * Handles canvas setup, resizing, and rendering
@@ -16,10 +17,13 @@ export class Renderer {
   private dpr: number = 1;
   private width: number = 0;
   private height: number = 0;
+  private pool: GrowthProgressPool;
 
   constructor(options: ResolvedOptions) {
     this.options = options;
     this.container = options.container;
+    // Each Renderer gets its own pool for isolated state
+    this.pool = new GrowthProgressPool();
 
     // Create canvas with configurable z-index and opacity
     this.canvas = document.createElement('canvas');
@@ -151,19 +155,25 @@ export class Renderer {
   /**
    * Render all plants
    * Pre-filters plants that haven't started growing to avoid unnecessary draw calls
+   * Uses object pool for growth phase calculations to minimize allocations
    */
   render(plants: PlantData[], time: number): void {
-    this.clear();
-    this.drawGround();
+    this.pool.beginFrame();
+    try {
+      this.clear();
+      this.drawGround();
 
-    for (const plant of plants) {
-      // Skip plants that haven't started growing yet
-      if (time < plant.delay) continue;
-      drawPlant(this.ctx, plant, this.width, this.height, time);
+      for (const plant of plants) {
+        // Skip plants that haven't started growing yet
+        if (time < plant.delay) continue;
+        drawPlant(this.ctx, plant, this.width, this.height, time, this.pool);
+      }
+
+      // Apply vertical fade if configured
+      this.applyVerticalFade();
+    } finally {
+      this.pool.endFrame();
     }
-
-    // Apply vertical fade if configured
-    this.applyVerticalFade();
   }
 
   /**

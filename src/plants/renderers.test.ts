@@ -266,7 +266,7 @@ describe('Bezier control point calculations', () => {
 
     // Get the bezierCurveTo call
     const bezierCall = (ctx.bezierCurveTo as ReturnType<typeof vi.fn>).mock.calls[0];
-    const [cp1x, cp1y, cp2x, cp2y, endX, endY] = bezierCall;
+    const [cp1x, cp1y, _cp2x, cp2y, endX, _endY] = bezierCall;
 
     // CP1 should be between start and end X
     expect(cp1x).toBeGreaterThanOrEqual(x);

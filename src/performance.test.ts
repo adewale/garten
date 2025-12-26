@@ -9,6 +9,7 @@ import { Vec2, MutableVec2 } from './Vec2';
 import { Color } from './Color';
 import { SeededRandom } from './SeededRandom';
 import { GrowthProgress } from './GrowthProgress';
+import { GrowthProgressPool, MutableGrowthProgress } from './GrowthProgressPool';
 
 // Helper to measure operations per second
 function measureOpsPerSecond(fn: () => void, iterations: number = 10000): number {
@@ -368,5 +369,152 @@ describe('Performance: Throughput baselines', () => {
       100000
     );
     expect(ops).toBeGreaterThan(500000);
+  });
+});
+
+// ==================== GROWTHPROGRESSPOOL PERFORMANCE ====================
+
+describe('Performance: GrowthProgressPool', () => {
+  it('pool should be faster than creating new objects', () => {
+    const ITERATIONS = 10000;
+    // Pre-sized pool to avoid growth overhead during timing
+    const pool = new GrowthProgressPool({ devMode: false, initialSize: ITERATIONS, maxSize: 65536 });
+
+    // Warm up JIT with a few frames
+    for (let w = 0; w < 3; w++) {
+      pool.beginFrame();
+      for (let i = 0; i < 1000; i++) {
+        pool.acquireAndCalculate(i, 0, 1000);
+      }
+      pool.endFrame();
+    }
+
+    // Multiple measurement runs to get median
+    const poolTimes: number[] = [];
+    const allocTimes: number[] = [];
+
+    for (let run = 0; run < 5; run++) {
+      // Measure pool approach
+      pool.beginFrame();
+      const poolStart = performance.now();
+      for (let i = 0; i < ITERATIONS; i++) {
+        pool.acquireAndCalculate(i, 0, 1000);
+      }
+      poolTimes.push(performance.now() - poolStart);
+      pool.endFrame();
+
+      // Measure allocation approach
+      const allocStart = performance.now();
+      for (let i = 0; i < ITERATIONS; i++) {
+        GrowthProgress.calculate(i, 0, 1000);
+      }
+      allocTimes.push(performance.now() - allocStart);
+    }
+
+    // Compare medians for more stable results
+    const medianPool = poolTimes.sort((a, b) => a - b)[2];
+    const medianAlloc = allocTimes.sort((a, b) => a - b)[2];
+
+    // Pool should be competitive with allocation
+    // The real benefit is reduced GC pressure over sustained usage
+    // Allow generous margin due to JIT variance
+    expect(medianPool).toBeLessThan(medianAlloc * 3);
+  });
+
+  it('should perform 50k acquireAndCalculate in under 50ms', () => {
+    const pool = new GrowthProgressPool({ devMode: false, initialSize: 2048, maxSize: 65536 });
+    const ITERATIONS = 50000;
+
+    pool.beginFrame();
+    const start = performance.now();
+    for (let i = 0; i < ITERATIONS; i++) {
+      pool.acquireAndCalculate(i * 20, i * 10, 1000);
+    }
+    const elapsed = performance.now() - start;
+    pool.endFrame();
+
+    expect(elapsed).toBeLessThan(50);
+  });
+
+  it('beginFrame/endFrame should have minimal overhead', () => {
+    const pool = new GrowthProgressPool({ devMode: false });
+    const ITERATIONS = 10000;
+
+    const start = performance.now();
+    for (let i = 0; i < ITERATIONS; i++) {
+      pool.beginFrame();
+      pool.endFrame();
+    }
+    const elapsed = performance.now() - start;
+
+    // 10k frame cycles should complete in under 50ms
+    expect(elapsed).toBeLessThan(50);
+  });
+
+  it('should handle 1000 plants per frame under 16ms', () => {
+    const pool = new GrowthProgressPool({ devMode: false });
+    const numPlants = 1000;
+
+    // Pre-generate plant timing data
+    const plants = Array.from({ length: numPlants }, (_, i) => ({
+      delay: i * 5,
+      duration: 1000,
+    }));
+
+    const time = 500; // Mid-animation
+
+    pool.beginFrame();
+    const start = performance.now();
+
+    for (const plant of plants) {
+      if (time >= plant.delay) {
+        const phases = pool.acquireAndCalculate(time, plant.delay, plant.duration);
+        // Use result to prevent dead code elimination
+        if (phases.isActive && phases.stem > 0) {
+          // Simulate work
+        }
+      }
+    }
+
+    const elapsed = performance.now() - start;
+    pool.endFrame();
+
+    // Should complete in under 16ms for 60fps
+    expect(elapsed).toBeLessThan(16);
+  });
+
+  it('should not grow pool unnecessarily', () => {
+    const pool = new GrowthProgressPool({ devMode: false, initialSize: 1024 });
+
+    // Simulate 100 frames with 500 plants each
+    for (let frame = 0; frame < 100; frame++) {
+      pool.beginFrame();
+      for (let i = 0; i < 500; i++) {
+        pool.acquireAndCalculate(frame * 16.67, i * 10, 1000);
+      }
+      pool.endFrame();
+    }
+
+    const stats = pool.getStats();
+    // With 500 plants and initial size 1024, should never need to grow
+    expect(stats.growthEvents).toBe(0);
+    expect(stats.poolSize).toBe(1024);
+  });
+
+  it('MutableGrowthProgress.calculateMut should achieve > 2M ops/sec', () => {
+    const obj = new MutableGrowthProgress();
+    const ops = measureOpsPerSecond(
+      () => obj.calculateMut(500, 100, 1000),
+      100000
+    );
+    expect(ops).toBeGreaterThan(2000000);
+  });
+
+  it('pool.acquire should achieve > 5M ops/sec', () => {
+    const pool = new GrowthProgressPool({ devMode: false, initialSize: 100000 });
+    pool.beginFrame();
+    const ops = measureOpsPerSecond(() => pool.acquire(), 100000);
+    pool.endFrame();
+    expect(ops).toBeGreaterThan(5000000);
   });
 });

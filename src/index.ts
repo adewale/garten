@@ -34,6 +34,17 @@ export { PLANT_CATEGORIES, getPlantCategory, getPlantVariation } from './plants'
 export { Color, hexToRgb, rgbToHex, lightenColor, darkenColor } from './Color';
 export { Vec2, MutableVec2, type Point } from './Vec2';
 export { GrowthProgress, calculateGrowthPhases, isPlantActive, calculateRawProgress } from './GrowthProgress';
+export {
+  GrowthProgressPool,
+  MutableGrowthProgress,
+  getDefaultPool,
+  resetDefaultPool,
+  disposeDefaultPool,
+  type GrowthProgressPoolConfig,
+  type PoolStats,
+  type FrameStats,
+  type LeakInfo,
+} from './GrowthProgressPool';
 export { SeededRandom } from './SeededRandom';
 export { CanvasHelper, drawStem, drawLeaf, drawLeafPair } from './CanvasHelper';
 export { EventEmitter, SimpleEventEmitter } from './EventEmitter';

@@ -3,6 +3,7 @@ import { PlantType, PlantCategory } from '../types';
 import { seededRandom, createRandom } from '../utils';
 import { getPlantCategory } from './generator';
 import { getPlantVariation } from './variations';
+import { GrowthProgressPool, MutableGrowthProgress, getDefaultPool } from '../GrowthProgressPool';
 
 /**
  * Common drawing context type
@@ -10,29 +11,21 @@ import { getPlantVariation } from './variations';
 type Ctx = CanvasRenderingContext2D;
 
 /**
- * Growth phases for plant animation
- */
-interface GrowthPhases {
-  progress: number;
-  stem: number;
-  leaf: number;
-  flower: number;
-}
-
-/**
- * Calculate growth phases from progress value
+ * Calculate growth phases from progress value using the object pool
  * Extracts the common growth timing logic used by most renderers
+ * Returns null if the plant hasn't started growing yet
  */
-function calculateGrowthPhases(time: number, delay: number, growDuration: number): GrowthPhases | null {
+function calculateGrowthPhases(
+  time: number,
+  delay: number,
+  growDuration: number,
+  pool?: GrowthProgressPool
+): MutableGrowthProgress | null {
   const progress = (time - delay) / growDuration;
   if (progress <= 0) return null;
 
-  return {
-    progress,
-    stem: Math.min(1, progress * 1.5),
-    leaf: Math.max(0, Math.min(1, (progress - 0.3) * 2)),
-    flower: Math.max(0, Math.min(1, (progress - 0.5) * 2)),
-  };
+  const activePool = pool ?? getDefaultPool();
+  return activePool.acquireAndCalculate(time, delay, growDuration);
 }
 
 /**
@@ -42,20 +35,22 @@ interface FloweringPlantContext {
   x: number;
   baseY: number;
   plantHeight: number;
-  phases: GrowthPhases;
+  phases: MutableGrowthProgress;
 }
 
 /**
  * Create render context for a flowering plant
+ * Uses object pool for growth phase calculations
  */
 function createFloweringContext(
   plant: PlantData,
   width: number,
   height: number,
   time: number,
-  variation: PlantVariation
+  variation: PlantVariation,
+  pool?: GrowthProgressPool
 ): FloweringPlantContext | null {
-  const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration);
+  const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration, pool);
   if (!phases) return null;
 
   return {
@@ -928,12 +923,13 @@ type CategoryRenderer = (
   width: number,
   height: number,
   time: number,
-  variation: PlantVariation
+  variation: PlantVariation,
+  pool?: GrowthProgressPool
 ) => void;
 
 const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
-  [PlantCategory.SimpleFlower]: (ctx, plant, width, height, time, variation) => {
-    const rc = createFloweringContext(plant, width, height, time, variation);
+  [PlantCategory.SimpleFlower]: (ctx, plant, width, height, time, variation, pool) => {
+    const rc = createFloweringContext(plant, width, height, time, variation, pool);
     if (!rc) return;
 
     const { x, baseY, plantHeight, phases } = rc;
@@ -958,8 +954,8 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     }
   },
 
-  [PlantCategory.Tulip]: (ctx, plant, width, height, time, variation) => {
-    const rc = createFloweringContext(plant, width, height, time, variation);
+  [PlantCategory.Tulip]: (ctx, plant, width, height, time, variation, pool) => {
+    const rc = createFloweringContext(plant, width, height, time, variation, pool);
     if (!rc) return;
 
     const { x, baseY, plantHeight, phases } = rc;
@@ -983,8 +979,8 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     }
   },
 
-  [PlantCategory.Daisy]: (ctx, plant, width, height, time, variation) => {
-    const rc = createFloweringContext(plant, width, height, time, variation);
+  [PlantCategory.Daisy]: (ctx, plant, width, height, time, variation, pool) => {
+    const rc = createFloweringContext(plant, width, height, time, variation, pool);
     if (!rc) return;
 
     const { x, baseY, plantHeight, phases } = rc;
@@ -1008,8 +1004,8 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     }
   },
 
-  [PlantCategory.Wildflower]: (ctx, plant, width, height, time, variation) => {
-    const rc = createFloweringContext(plant, width, height, time, variation);
+  [PlantCategory.Wildflower]: (ctx, plant, width, height, time, variation, pool) => {
+    const rc = createFloweringContext(plant, width, height, time, variation, pool);
     if (!rc) return;
 
     const { x, baseY, plantHeight, phases } = rc;
@@ -1027,37 +1023,41 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     }
   },
 
-  [PlantCategory.Grass]: (ctx, plant, width, height, time, variation) => {
-    const progress = (time - plant.delay) / plant.growDuration;
-    if (progress <= 0) return;
+  [PlantCategory.Grass]: (ctx, plant, width, height, time, variation, pool) => {
+    const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration, pool);
+    if (!phases) return;
 
     const x = plant.x * width;
     const baseY = height;
     const plantHeight = plant.maxHeight * height;
-    const stemGrowth = Math.min(1, progress * 1.5);
+    // Grass uses stem growth rate (1.5x) which matches pool's stem calculation
+    const stemGrowth = phases.stem;
 
     drawGrass(ctx, x, baseY, plantHeight, plant.leafColor, plant.seed, stemGrowth, variation);
   },
 
-  [PlantCategory.Fern]: (ctx, plant, width, height, time, variation) => {
-    const progress = (time - plant.delay) / plant.growDuration;
-    if (progress <= 0) return;
+  [PlantCategory.Fern]: (ctx, plant, width, height, time, variation, pool) => {
+    const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration, pool);
+    if (!phases) return;
 
     const x = plant.x * width;
     const baseY = height;
     const plantHeight = plant.maxHeight * height;
-    const stemGrowth = Math.min(1, progress * 1.5);
+    // Fern uses stem growth rate (1.5x) which matches pool's stem calculation
+    const stemGrowth = phases.stem;
 
     drawFern(ctx, x, baseY, plantHeight, plant.leafColor, plant.seed, stemGrowth, variation);
   },
 
-  [PlantCategory.Bush]: (ctx, plant, width, height, time, variation) => {
-    const progress = (time - plant.delay) / plant.growDuration;
-    if (progress <= 0) return;
+  [PlantCategory.Bush]: (ctx, plant, width, height, time, variation, pool) => {
+    const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration, pool);
+    if (!phases) return;
 
     const x = plant.x * width;
     const baseY = height;
     const plantHeight = plant.maxHeight * height;
+    // Bush uses 1.2x growth rate (different from stem's 1.5x)
+    const growth = Math.min(1, phases.progress * 1.2);
 
     drawBush(
       ctx,
@@ -1067,13 +1067,13 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
       plant.leafColor,
       plant.flowerColor,
       plant.seed,
-      Math.min(1, progress * 1.2),
+      growth,
       variation
     );
   },
 
-  [PlantCategory.Rose]: (ctx, plant, width, height, time, variation) => {
-    const rc = createFloweringContext(plant, width, height, time, variation);
+  [PlantCategory.Rose]: (ctx, plant, width, height, time, variation, pool) => {
+    const rc = createFloweringContext(plant, width, height, time, variation, pool);
     if (!rc) return;
 
     const { x, baseY, plantHeight, phases } = rc;
@@ -1097,8 +1097,8 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     }
   },
 
-  [PlantCategory.Lily]: (ctx, plant, width, height, time, variation) => {
-    const rc = createFloweringContext(plant, width, height, time, variation);
+  [PlantCategory.Lily]: (ctx, plant, width, height, time, variation, pool) => {
+    const rc = createFloweringContext(plant, width, height, time, variation, pool);
     if (!rc) return;
 
     const { x, baseY, plantHeight, phases } = rc;
@@ -1122,8 +1122,8 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     }
   },
 
-  [PlantCategory.Orchid]: (ctx, plant, width, height, time, variation) => {
-    const rc = createFloweringContext(plant, width, height, time, variation);
+  [PlantCategory.Orchid]: (ctx, plant, width, height, time, variation, pool) => {
+    const rc = createFloweringContext(plant, width, height, time, variation, pool);
     if (!rc) return;
 
     const { x, baseY, plantHeight, phases } = rc;
@@ -1141,30 +1141,34 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     }
   },
 
-  [PlantCategory.Succulent]: (ctx, plant, width, height, time, variation) => {
-    const progress = (time - plant.delay) / plant.growDuration;
-    if (progress <= 0) return;
+  [PlantCategory.Succulent]: (ctx, plant, width, height, time, variation, pool) => {
+    const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration, pool);
+    if (!phases) return;
 
     const x = plant.x * width;
     const baseY = height;
     const plantHeight = plant.maxHeight * height;
+    // Succulent uses 1.2x growth rate
+    const growth = Math.min(1, phases.progress * 1.2);
 
-    drawSucculent(ctx, x, baseY - 5, plantHeight * 0.6, plant.leafColor, Math.min(1, progress * 1.2), variation);
+    drawSucculent(ctx, x, baseY - 5, plantHeight * 0.6, plant.leafColor, growth, variation);
   },
 
-  [PlantCategory.Herb]: (ctx, plant, width, height, time, variation) => {
-    const progress = (time - plant.delay) / plant.growDuration;
-    if (progress <= 0) return;
+  [PlantCategory.Herb]: (ctx, plant, width, height, time, variation, pool) => {
+    const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration, pool);
+    if (!phases) return;
 
     const x = plant.x * width;
     const baseY = height;
     const plantHeight = plant.maxHeight * height;
+    // Herb uses 1.3x growth rate
+    const growth = Math.min(1, phases.progress * 1.3);
 
-    drawLavender(ctx, x, baseY, plantHeight, plant.flowerColor, plant.seed, Math.min(1, progress * 1.3), variation);
+    drawLavender(ctx, x, baseY, plantHeight, plant.flowerColor, plant.seed, growth, variation);
   },
 
-  [PlantCategory.Specialty]: (ctx, plant, width, height, time, variation) => {
-    const rc = createFloweringContext(plant, width, height, time, variation);
+  [PlantCategory.Specialty]: (ctx, plant, width, height, time, variation, pool) => {
+    const rc = createFloweringContext(plant, width, height, time, variation, pool);
     if (!rc) return;
 
     const { x, baseY, plantHeight, phases } = rc;
@@ -1212,8 +1216,8 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
 
   // === TALL CATEGORIES ===
 
-  [PlantCategory.TallFlower]: (ctx, plant, width, height, time, variation) => {
-    const rc = createFloweringContext(plant, width, height, time, variation);
+  [PlantCategory.TallFlower]: (ctx, plant, width, height, time, variation, pool) => {
+    const rc = createFloweringContext(plant, width, height, time, variation, pool);
     if (!rc) return;
 
     const { x, baseY, plantHeight, phases } = rc;
@@ -1255,14 +1259,15 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     }
   },
 
-  [PlantCategory.GiantGrass]: (ctx, plant, width, height, time, variation) => {
-    const progress = (time - plant.delay) / plant.growDuration;
-    if (progress <= 0) return;
+  [PlantCategory.GiantGrass]: (ctx, plant, width, height, time, variation, pool) => {
+    const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration, pool);
+    if (!phases) return;
 
     const x = plant.x * width;
     const baseY = height;
     const plantHeight = plant.maxHeight * height * variation.heightMultiplier;
-    const stemGrowth = Math.min(1, progress * 1.3);
+    // GiantGrass uses 1.3x growth rate
+    const stemGrowth = Math.min(1, phases.progress * 1.3);
 
     // Draw bamboo-style segmented culms
     const numCulms = 2 + Math.floor(variation.complexity * 3);
@@ -1316,14 +1321,15 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     }
   },
 
-  [PlantCategory.Climber]: (ctx, plant, width, height, time, variation) => {
-    const progress = (time - plant.delay) / plant.growDuration;
-    if (progress <= 0) return;
+  [PlantCategory.Climber]: (ctx, plant, width, height, time, variation, pool) => {
+    const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration, pool);
+    if (!phases) return;
 
     const x = plant.x * width;
     const baseY = height;
     const plantHeight = plant.maxHeight * height * variation.heightMultiplier;
-    const stemGrowth = Math.min(1, progress * 1.2);
+    // Climber uses 1.2x growth rate
+    const stemGrowth = Math.min(1, phases.progress * 1.2);
 
     const rand = createRandom(plant.seed);
 
@@ -1381,15 +1387,17 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     }
   },
 
-  [PlantCategory.SmallTree]: (ctx, plant, width, height, time, variation) => {
-    const progress = (time - plant.delay) / plant.growDuration;
-    if (progress <= 0) return;
+  [PlantCategory.SmallTree]: (ctx, plant, width, height, time, variation, pool) => {
+    const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration, pool);
+    if (!phases) return;
 
     const x = plant.x * width;
     const baseY = height;
     const plantHeight = plant.maxHeight * height * variation.heightMultiplier;
-    const trunkGrowth = Math.min(1, progress * 1.2);
-    const foliageGrowth = Math.max(0, (progress - 0.4) * 1.7);
+    // SmallTree trunk uses 1.2x growth rate
+    const trunkGrowth = Math.min(1, phases.progress * 1.2);
+    // Foliage matches pool's foliage calculation (start 0.4, rate 1.7)
+    const foliageGrowth = phases.foliage;
 
     const rand = createRandom(plant.seed);
 
@@ -1440,14 +1448,15 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     }
   },
 
-  [PlantCategory.Tropical]: (ctx, plant, width, height, time, variation) => {
-    const progress = (time - plant.delay) / plant.growDuration;
-    if (progress <= 0) return;
+  [PlantCategory.Tropical]: (ctx, plant, width, height, time, variation, pool) => {
+    const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration, pool);
+    if (!phases) return;
 
     const x = plant.x * width;
     const baseY = height;
     const plantHeight = plant.maxHeight * height * variation.heightMultiplier;
-    const growth = Math.min(1, progress * 1.2);
+    // Tropical uses 1.2x growth rate
+    const growth = Math.min(1, phases.progress * 1.2);
 
     const rand = createRandom(plant.seed);
 
@@ -1500,14 +1509,15 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     }
   },
 
-  [PlantCategory.Conifer]: (ctx, plant, width, height, time, variation) => {
-    const progress = (time - plant.delay) / plant.growDuration;
-    if (progress <= 0) return;
+  [PlantCategory.Conifer]: (ctx, plant, width, height, time, variation, pool) => {
+    const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration, pool);
+    if (!phases) return;
 
     const x = plant.x * width;
     const baseY = height;
     const plantHeight = plant.maxHeight * height * variation.heightMultiplier;
-    const growth = Math.min(1, progress * 1.2);
+    // Conifer uses 1.2x growth rate
+    const growth = Math.min(1, phases.progress * 1.2);
 
     // Draw trunk
     const trunkHeight = plantHeight * growth;
@@ -1551,17 +1561,19 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
  * Main plant rendering function
  * Uses category-based dispatch for O(1) lookup
  * Optimized to use cached category/variation when available
+ * Accepts optional pool for growth phase calculations
  */
 export function drawPlant(
   ctx: Ctx,
   plant: PlantData,
   width: number,
   height: number,
-  time: number
+  time: number,
+  pool?: GrowthProgressPool
 ): void {
   // Use cached values for O(1) lookup, fall back to function calls if not cached
   const category = plant.category ?? getPlantCategory(plant.type);
   const variation = plant.variation ?? getPlantVariation(plant.type);
   const renderer = categoryRenderers[category];
-  renderer(ctx, plant, width, height, time, variation);
+  renderer(ctx, plant, width, height, time, variation, pool);
 }

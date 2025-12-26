@@ -10,6 +10,7 @@ import { Color } from './Color';
 import { SeededRandom } from './SeededRandom';
 import { GrowthProgress } from './GrowthProgress';
 import { SimpleEventEmitter } from './EventEmitter';
+import { GrowthProgressPool, MutableGrowthProgress } from './GrowthProgressPool';
 
 describe('Integration: SeededRandom + Vec2', () => {
   it('should generate deterministic random positions', () => {
@@ -483,8 +484,9 @@ describe('Constraint: Determinism', () => {
   it('forked RNG should produce independent sequence from parent', () => {
     const rng = new SeededRandom(42);
 
-    // Get some values before forking
-    const parentBefore = [rng.next(), rng.next()];
+    // Get some values before forking (advancing the RNG state)
+    rng.next();
+    rng.next();
 
     // Fork (note: fork() consumes one value from parent to derive child seed)
     const forked = rng.fork();
@@ -664,5 +666,134 @@ describe('Constraint: GrowthProgress immutability', () => {
 
     // Original values unchanged
     expect(growth.progress).toBe(originalProgress);
+  });
+});
+
+// ==================== GROWTHPROGRESSPOOL INTEGRATION ====================
+
+describe('Constraint: GrowthProgressPool frame lifecycle', () => {
+  it('should produce identical results to immutable GrowthProgress', () => {
+    const pool = new GrowthProgressPool({ devMode: true });
+
+    // Test various progress values
+    const testCases = [
+      { time: 0.5, delay: 0, duration: 1.0 },
+      { time: 1.0, delay: 0.5, duration: 1.0 },
+      { time: 2.0, delay: 0.3, duration: 2.0 },
+      { time: 0.8, delay: 0.2, duration: 0.8 },
+    ];
+
+    pool.beginFrame();
+
+    for (const { time, delay, duration } of testCases) {
+      const immutable = GrowthProgress.calculate(time, delay, duration);
+      const mutable = pool.acquireAndCalculate(time, delay, duration);
+
+      expect(mutable.progress).toBeCloseTo(immutable.progress, 10);
+      expect(mutable.stem).toBeCloseTo(immutable.stem, 10);
+      expect(mutable.leaf).toBeCloseTo(immutable.leaf, 10);
+      expect(mutable.flower).toBeCloseTo(immutable.flower, 10);
+    }
+
+    pool.endFrame();
+  });
+
+  it('should maintain phase ordering invariants (stem >= flower)', () => {
+    const pool = new GrowthProgressPool({ devMode: true });
+    const testProgressValues = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+
+    pool.beginFrame();
+
+    for (const progress of testProgressValues) {
+      const time = progress * 1000;
+      const phases = pool.acquireAndCalculate(time, 0, 1000);
+
+      // Stem should always be >= flower (stem grows first)
+      expect(phases.stem).toBeGreaterThanOrEqual(phases.flower);
+
+      // All phases should be clamped to [0, 1]
+      expect(phases.progress).toBeGreaterThanOrEqual(0);
+      expect(phases.progress).toBeLessThanOrEqual(1);
+      expect(phases.stem).toBeGreaterThanOrEqual(0);
+      expect(phases.stem).toBeLessThanOrEqual(1);
+      expect(phases.leaf).toBeGreaterThanOrEqual(0);
+      expect(phases.leaf).toBeLessThanOrEqual(1);
+      expect(phases.flower).toBeGreaterThanOrEqual(0);
+      expect(phases.flower).toBeLessThanOrEqual(1);
+    }
+
+    pool.endFrame();
+  });
+
+  it('should allow multiple frames without issues', () => {
+    const pool = new GrowthProgressPool({ devMode: true });
+
+    for (let frame = 0; frame < 100; frame++) {
+      pool.beginFrame();
+
+      // Acquire several objects each frame
+      for (let i = 0; i < 50; i++) {
+        const phases = pool.acquireAndCalculate(frame * 16.67, i * 100, 1000);
+        expect(phases).toBeDefined();
+      }
+
+      pool.endFrame();
+    }
+
+    const stats = pool.getStats();
+    expect(stats.acquired).toBe(5000);
+    expect(stats.released).toBe(5000);
+    expect(stats.peakUsage).toBe(50);
+  });
+
+  it('should correctly release all objects between frames', () => {
+    const pool = new GrowthProgressPool({ devMode: true });
+
+    pool.beginFrame();
+    const obj1 = pool.acquire();
+    obj1.progress = 0.5;
+    pool.endFrame();
+
+    pool.beginFrame();
+    const obj2 = pool.acquire();
+    // Object should be reset
+    expect(obj2.progress).toBe(0);
+    pool.endFrame();
+
+    // Same object should have been reused
+    expect(obj1).toBe(obj2);
+  });
+});
+
+describe('Constraint: Pool + Render integration', () => {
+  it('should handle plant rendering simulation', () => {
+    const pool = new GrowthProgressPool({ devMode: true });
+
+    // Simulate rendering 500 plants over multiple frames
+    const numPlants = 500;
+    const plants = Array.from({ length: numPlants }, (_, i) => ({
+      delay: i * 10,
+      duration: 1000,
+    }));
+
+    for (let frame = 0; frame < 60; frame++) {
+      const time = frame * 16.67;
+
+      pool.beginFrame();
+
+      for (const plant of plants) {
+        // Only check plants that have started (time > delay, not >=)
+        // When time == delay, progress is 0, which means isActive is false
+        if (time > plant.delay) {
+          const phases = pool.acquireAndCalculate(time, plant.delay, plant.duration);
+          expect(phases.isActive).toBe(true);
+        }
+      }
+
+      pool.endFrame();
+    }
+
+    const stats = pool.getStats();
+    expect(stats.growthEvents).toBe(0); // Should not need to grow from 1024
   });
 });

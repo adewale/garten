@@ -83,7 +83,7 @@ export class GrowthProgress {
     this._flower = Math.max(0, Math.min(1, (this._progress - config.flowerStart) * config.flowerRate));
 
     // Extended phases
-    this._foliage = Math.max(0, (this._progress - GROWTH_PHASES.FOLIAGE_START) * GROWTH_PHASES.FOLIAGE_GROWTH_RATE);
+    this._foliage = Math.max(0, Math.min(1, (this._progress - GROWTH_PHASES.FOLIAGE_START) * GROWTH_PHASES.FOLIAGE_GROWTH_RATE));
     this._plume = this._progress > GROWTH_PHASES.PLUME_START
       ? (this._progress - GROWTH_PHASES.PLUME_START) / (1 - GROWTH_PHASES.PLUME_START)
       : 0;
