@@ -642,8 +642,9 @@
       };
       selectedCategories = scene.config.categories;
 
-      // Apply to garden
+      // Apply to garden and start animation
       garden.setOptions(scene.config);
+      garden.play();
 
       // Update UI
       document.getElementById('heightSlider').value = scene.config.maxHeight * 100;
