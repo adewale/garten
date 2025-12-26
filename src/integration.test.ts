@@ -397,3 +397,272 @@ describe('Integration: Color manipulation chains', () => {
     expect(stops[1].color.luminance()).toBeGreaterThan(stops[2].color.luminance());
   });
 });
+
+// ==================== CONSTRAINT TESTS ====================
+// These tests verify invariants and relationships that must hold
+// across the system to ensure correctness.
+
+describe('Constraint: Growth phase ordering', () => {
+  it('stem should always be >= flower at any progress', () => {
+    // Stem starts immediately and grows faster, flower starts at 50%
+    for (let p = 0; p <= 1; p += 0.05) {
+      const growth = GrowthProgress.fromProgress(p);
+      expect(growth.stem).toBeGreaterThanOrEqual(growth.flower);
+    }
+  });
+
+  it('stem should reach 1 before flower reaches 1', () => {
+    // Stem completes at progress ~0.67, flower at progress 1.0
+    const atStemComplete = GrowthProgress.fromProgress(0.67);
+    expect(atStemComplete.stem).toBe(1);
+    expect(atStemComplete.flower).toBeLessThan(1);
+  });
+
+  it('leaf should start before flower', () => {
+    // Leaf starts at 30%, flower at 50%
+    const atLeafStart = GrowthProgress.fromProgress(0.31);
+    const atFlowerStart = GrowthProgress.fromProgress(0.51);
+
+    expect(atLeafStart.hasLeaves).toBe(true);
+    expect(atLeafStart.hasFlower).toBe(false);
+    expect(atFlowerStart.hasFlower).toBe(true);
+  });
+
+  it('progress should be monotonically increasing with time', () => {
+    const delay = 100;
+    const duration = 1000;
+    let previousProgress = -1;
+
+    for (let time = 0; time <= 1200; time += 50) {
+      const growth = GrowthProgress.calculate(time, delay, duration);
+      expect(growth.progress).toBeGreaterThanOrEqual(previousProgress);
+      previousProgress = growth.progress;
+    }
+  });
+
+  it('all phases should be clamped to [0, 1]', () => {
+    // Test edge cases including negative and very large progress
+    const testCases = [-0.5, 0, 0.5, 1, 1.5, 2];
+
+    for (const p of testCases) {
+      const growth = GrowthProgress.fromProgress(p);
+      expect(growth.progress).toBeGreaterThanOrEqual(0);
+      expect(growth.progress).toBeLessThanOrEqual(1);
+      expect(growth.stem).toBeGreaterThanOrEqual(0);
+      expect(growth.stem).toBeLessThanOrEqual(1);
+      expect(growth.leaf).toBeGreaterThanOrEqual(0);
+      expect(growth.leaf).toBeLessThanOrEqual(1);
+      expect(growth.flower).toBeGreaterThanOrEqual(0);
+      expect(growth.flower).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
+describe('Constraint: Determinism', () => {
+  it('SeededRandom should produce identical sequences with same seed', () => {
+    const runs = 3;
+    const sequences: number[][] = [];
+
+    for (let run = 0; run < runs; run++) {
+      const rng = new SeededRandom(42);
+      const seq: number[] = [];
+      for (let i = 0; i < 100; i++) {
+        seq.push(rng.next());
+      }
+      sequences.push(seq);
+    }
+
+    // All runs should produce identical sequences
+    for (let run = 1; run < runs; run++) {
+      for (let i = 0; i < 100; i++) {
+        expect(sequences[run][i]).toBe(sequences[0][i]);
+      }
+    }
+  });
+
+  it('forked RNG should produce independent sequence from parent', () => {
+    const rng = new SeededRandom(42);
+
+    // Get some values before forking
+    const parentBefore = [rng.next(), rng.next()];
+
+    // Fork (note: fork() consumes one value from parent to derive child seed)
+    const forked = rng.fork();
+
+    // Get values from both
+    const parentAfter = [rng.next(), rng.next()];
+    const forkedValues = [forked.next(), forked.next()];
+
+    // Parent and forked should produce different sequences
+    expect(parentAfter).not.toEqual(forkedValues);
+
+    // Using the forked RNG should not affect the parent's future values
+    forked.next();
+    forked.next();
+    forked.next();
+
+    // Parent continues its own sequence unaffected by forked usage
+    const parentContinued = [rng.next(), rng.next()];
+
+    // Verify parent sequence is deterministic (create fresh RNG)
+    const rngFresh = new SeededRandom(42);
+    rngFresh.next(); rngFresh.next(); // match parentBefore
+    rngFresh.fork();                   // match fork call
+    rngFresh.next(); rngFresh.next(); // match parentAfter
+    const freshContinued = [rngFresh.next(), rngFresh.next()];
+
+    expect(parentContinued).toEqual(freshContinued);
+  });
+
+  it('same seed should produce same color from HSL', () => {
+    for (let seed = 0; seed < 10; seed++) {
+      const rng1 = new SeededRandom(seed);
+      const rng2 = new SeededRandom(seed);
+
+      const color1 = Color.fromHSL(rng1.range(0, 360), rng1.range(50, 100), rng1.range(40, 60));
+      const color2 = Color.fromHSL(rng2.range(0, 360), rng2.range(50, 100), rng2.range(40, 60));
+
+      expect(color1.equals(color2)).toBe(true);
+    }
+  });
+});
+
+describe('Constraint: Color validity', () => {
+  it('RGB values should always be clamped to 0-255', () => {
+    // Test edge cases
+    const edgeCases = [
+      new Color(-10, 128, 128),
+      new Color(300, 128, 128),
+      new Color(128, -50, 128),
+      new Color(128, 128, 500),
+    ];
+
+    for (const color of edgeCases) {
+      expect(color.r).toBeGreaterThanOrEqual(0);
+      expect(color.r).toBeLessThanOrEqual(255);
+      expect(color.g).toBeGreaterThanOrEqual(0);
+      expect(color.g).toBeLessThanOrEqual(255);
+      expect(color.b).toBeGreaterThanOrEqual(0);
+      expect(color.b).toBeLessThanOrEqual(255);
+    }
+  });
+
+  it('alpha should always be clamped to 0-1', () => {
+    const edgeCases = [
+      new Color(128, 128, 128, -0.5),
+      new Color(128, 128, 128, 1.5),
+      new Color(128, 128, 128, 0),
+      new Color(128, 128, 128, 1),
+    ];
+
+    for (const color of edgeCases) {
+      expect(color.a).toBeGreaterThanOrEqual(0);
+      expect(color.a).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('hex conversion should be reversible', () => {
+    const testColors = [
+      new Color(0, 0, 0),
+      new Color(255, 255, 255),
+      new Color(128, 64, 192),
+      new Color(255, 0, 128),
+    ];
+
+    for (const original of testColors) {
+      const hex = original.toHex();
+      const restored = Color.fromHex(hex);
+      expect(restored).not.toBeNull();
+      expect(restored!.r).toBe(original.r);
+      expect(restored!.g).toBe(original.g);
+      expect(restored!.b).toBe(original.b);
+    }
+  });
+
+  it('lighten should increase luminance or stay same', () => {
+    const colors = [
+      new Color(100, 100, 100),
+      new Color(200, 50, 50),
+      new Color(50, 150, 50),
+    ];
+
+    for (const color of colors) {
+      const lightened = color.lighten(0.2);
+      expect(lightened.luminance()).toBeGreaterThanOrEqual(color.luminance() - 0.001);
+    }
+  });
+
+  it('darken should decrease luminance or stay same', () => {
+    const colors = [
+      new Color(100, 100, 100),
+      new Color(200, 50, 50),
+      new Color(50, 150, 50),
+    ];
+
+    for (const color of colors) {
+      const darkened = color.darken(0.2);
+      expect(darkened.luminance()).toBeLessThanOrEqual(color.luminance() + 0.001);
+    }
+  });
+});
+
+describe('Constraint: Vec2 immutability', () => {
+  it('operations should return new instances', () => {
+    const v1 = new Vec2(10, 20);
+    const v2 = new Vec2(5, 5);
+
+    const added = v1.add(v2);
+    const subtracted = v1.subtract(v2);
+    const multiplied = v1.multiply(2);
+    const normalized = v1.normalize();
+    const rotated = v1.rotate(Math.PI);
+
+    // Original should be unchanged
+    expect(v1.x).toBe(10);
+    expect(v1.y).toBe(20);
+
+    // Results should be different instances
+    expect(added).not.toBe(v1);
+    expect(subtracted).not.toBe(v1);
+    expect(multiplied).not.toBe(v1);
+    expect(normalized).not.toBe(v1);
+    expect(rotated).not.toBe(v1);
+  });
+
+  it('MutableVec2 should mutate in place', () => {
+    const mv = new MutableVec2(10, 20);
+    const original = mv;
+
+    mv.addMut({ x: 5, y: 5 });
+
+    // Should be same instance
+    expect(mv).toBe(original);
+    expect(mv.x).toBe(15);
+    expect(mv.y).toBe(25);
+  });
+});
+
+describe('Constraint: GrowthProgress immutability', () => {
+  it('fromProgress should return consistent results', () => {
+    const progress = 0.75;
+    const g1 = GrowthProgress.fromProgress(progress);
+    const g2 = GrowthProgress.fromProgress(progress);
+
+    expect(g1.progress).toBe(g2.progress);
+    expect(g1.stem).toBe(g2.stem);
+    expect(g1.leaf).toBe(g2.leaf);
+    expect(g1.flower).toBe(g2.flower);
+  });
+
+  it('eased should not modify original', () => {
+    const growth = GrowthProgress.fromProgress(0.5);
+    const originalProgress = growth.progress;
+
+    growth.eased('ease-out');
+    growth.easedStem('ease-in');
+    growth.easedFlower('ease-in-out');
+
+    // Original values unchanged
+    expect(growth.progress).toBe(originalProgress);
+  });
+});

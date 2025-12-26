@@ -1,21 +1,7 @@
 import type { TimingCurve } from './types';
 
-/**
- * Seeded pseudo-random number generator
- * Returns a value between 0 and 1
- */
-export function seededRandom(seed: number): number {
-  const x = Math.sin(seed * 9999) * 10000;
-  return x - Math.floor(x);
-}
-
-/**
- * Create a seeded random function that auto-increments
- */
-export function createRandom(initialSeed: number): () => number {
-  let seed = initialSeed;
-  return () => seededRandom(seed++);
-}
+// Re-export RNG functions from SeededRandom to avoid duplication
+export { seededRandom, createRandom, pickRandom, randomRange } from './SeededRandom';
 
 /**
  * Linear interpolation
@@ -74,20 +60,6 @@ export function darkenColor(hex: string, amount: number): string {
   if (!rgb) return hex;
 
   return rgbToHex(rgb.r * (1 - amount), rgb.g * (1 - amount), rgb.b * (1 - amount));
-}
-
-/**
- * Pick a random item from an array using seeded random
- */
-export function pickRandom<T>(array: T[], rand: () => number): T {
-  return array[Math.floor(rand() * array.length)];
-}
-
-/**
- * Pick a random number in range using seeded random
- */
-export function randomRange(min: number, max: number, rand: () => number): number {
-  return min + rand() * (max - min);
 }
 
 /**

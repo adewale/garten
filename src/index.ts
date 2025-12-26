@@ -27,7 +27,7 @@ export { PlantType, PlantCategory } from './types';
 
 // Utility exports (for advanced usage)
 export { seededRandom, createRandom } from './utils';
-export { flowerPalettes, foliagePalettes } from './colors';
+export { flowerPalettes, foliagePalettes } from './palettes';
 export { PLANT_CATEGORIES, getPlantCategory, getPlantVariation } from './plants';
 
 // New abstractions

@@ -1,7 +1,7 @@
 import type { PlantData, ResolvedOptions, ColorOptions } from '../types';
 import { PlantType, PlantCategory } from '../types';
 import { createRandom, randomRange, applyTimingCurve } from '../utils';
-import { buildFlowerColors, buildFoliageColors } from '../colors';
+import { buildFlowerColors, buildFoliageColors } from '../palettes';
 import { plantsPerGeneration } from '../defaults';
 import { getPlantVariation } from './variations';
 

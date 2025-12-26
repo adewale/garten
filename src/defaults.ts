@@ -1,10 +1,11 @@
 import type { GardenOptions, ResolvedOptions, ColorOptions, GardenEvents, Density } from './types';
+import { OPTION_BOUNDS, PLANTS_PER_GENERATION, COLORS, ANIMATION, LAYOUT } from './constants';
 
 /**
  * Default color options
  */
 export const defaultColorOptions: Required<ColorOptions> = {
-  accent: '#F6821F',
+  accent: COLORS.DEFAULT_ACCENT,
   palette: 'natural',
   flowerColors: [],
   foliageColors: [],
@@ -20,9 +21,9 @@ export const defaultEvents: GardenEvents = {};
  * Default garden options
  */
 export const defaultOptions: Omit<ResolvedOptions, 'container'> = {
-  duration: 600,
-  generations: 47,
-  maxHeight: 0.35,
+  duration: ANIMATION.DEFAULT_DURATION,
+  generations: ANIMATION.DEFAULT_GENERATIONS,
+  maxHeight: LAYOUT.DEFAULT_MAX_HEIGHT,
   colors: defaultColorOptions,
   density: 'normal',
   categories: null,
@@ -31,49 +32,48 @@ export const defaultOptions: Omit<ResolvedOptions, 'container'> = {
   autoplay: true,
   respectReducedMotion: true,
   seed: Math.random() * 100000,
-  maxPixelRatio: 2,
-  targetFPS: 30,
+  maxPixelRatio: ANIMATION.DEFAULT_MAX_PIXEL_RATIO,
+  targetFPS: ANIMATION.DEFAULT_TARGET_FPS,
   timingCurve: 'linear',
   zIndex: -1,
   opacity: 1,
   fadeHeight: 0,
-  fadeColor: '#ffffff',
+  fadeColor: COLORS.DEFAULT_FADE_COLOR,
   events: defaultEvents,
 };
 
 /**
- * Bounds for numeric options to prevent resource exhaustion
+ * Map from option key to OPTION_BOUNDS key
  */
-const numericBounds = {
-  duration: { min: 1, max: 86400 },        // 1 second to 24 hours
-  generations: { min: 1, max: 1000 },      // Reasonable upper limit
-  maxHeight: { min: 0.05, max: 1 },        // 5% to 100%
-  speed: { min: 0.01, max: 100 },          // Reasonable speed range
-  maxPixelRatio: { min: 0.5, max: 4 },     // Device pixel ratio
-  targetFPS: { min: 1, max: 120 },         // Frame rate
-  opacity: { min: 0, max: 1 },             // CSS opacity
-  fadeHeight: { min: 0, max: 1 },          // Fade zone height
-  zIndex: { min: -9999, max: 9999 },       // CSS z-index
-  seed: { min: 0, max: 1e9 },              // Random seed
+type BoundsKey = keyof typeof OPTION_BOUNDS;
+
+const optionToBoundsKey: Record<string, BoundsKey> = {
+  duration: 'DURATION',
+  generations: 'GENERATIONS',
+  maxHeight: 'MAX_HEIGHT',
+  speed: 'SPEED',
+  maxPixelRatio: 'MAX_PIXEL_RATIO',
+  targetFPS: 'TARGET_FPS',
+  opacity: 'OPACITY',
+  fadeHeight: 'FADE_HEIGHT',
+  zIndex: 'Z_INDEX',
+  seed: 'SEED',
 };
 
 /**
- * Clamp a number to bounds
+ * Clamp a number to bounds from constants
  */
-function clampOption(value: number, key: keyof typeof numericBounds): number {
-  const { min, max } = numericBounds[key];
+function clampOption(value: number, key: string): number {
+  const boundsKey = optionToBoundsKey[key];
+  if (!boundsKey) return value;
+  const { min, max } = OPTION_BOUNDS[boundsKey];
   return Math.min(max, Math.max(min, value));
 }
 
 /**
- * Plants per generation by density
+ * Plants per generation by density - re-exported from constants
  */
-export const plantsPerGeneration: Record<Density, [number, number]> = {
-  sparse: [4, 6],
-  normal: [8, 13],
-  dense: [14, 20],
-  lush: [22, 30],
-};
+export const plantsPerGeneration: Record<Density, readonly [number, number]> = PLANTS_PER_GENERATION;
 
 /**
  * Validate CSS selector format (basic validation for common selectors)

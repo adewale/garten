@@ -29,7 +29,7 @@ This is a TypeScript canvas animation library that renders an animated garden wi
 
 - **`src/defaults.ts`** - Default option values and `resolveOptions()` function that normalizes user input.
 
-- **`src/colors.ts`** - Color palette definitions (natural, warm, cool, monochrome, vibrant) for flowers and foliage.
+- **`src/palettes.ts`** - Color palette definitions (natural, warm, cool, monochrome, vibrant) for flowers and foliage. For color manipulation, see `Color.ts`.
 
 - **`src/utils.ts`** - Seeded random number generator and utility functions like `prefersReducedMotion()`.
 

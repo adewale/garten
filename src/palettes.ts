@@ -1,3 +1,14 @@
+/**
+ * Garden Color Palettes
+ *
+ * This module defines themed color palettes for garden rendering.
+ * It provides pre-defined palettes (natural, warm, cool, etc.) and
+ * functions to build color arrays for plant generation.
+ *
+ * Note: For color manipulation operations (lighten, darken, mix, etc.),
+ * see the Color class in Color.ts.
+ */
+
 import type { ColorPalette, ColorOptions } from './types';
 import { lightenColor, darkenColor } from './utils';
 

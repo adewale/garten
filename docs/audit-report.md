@@ -189,7 +189,7 @@ interface PlantRenderContext {
 | `types.ts` | Type definitions | 394 | Well-organized |
 | `defaults.ts` | Default values and resolution | 149 | Clear |
 | `utils.ts` | Utility functions | 160 | Some dead code |
-| `colors.ts` | Color palette management | 127 | Focused |
+| `palettes.ts` | Color palette management | 127 | Focused |
 | `Renderer.ts` | Canvas management | 173 | Well-designed |
 | `Garden.ts` | Main controller | 333 | Slightly large |
 | `plants/index.ts` | Plants barrel export | 3 | Appropriate |
