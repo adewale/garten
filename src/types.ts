@@ -231,8 +231,14 @@ export enum PlantType {
 
 /**
  * Color palette presets
+ * - natural: Mixed garden colors with greens
+ * - warm: Reds, oranges, yellows with olive foliage
+ * - cool: Purples, blues, lavenders with teal foliage
+ * - vibrant: Saturated rainbow colors
+ * - grayscale: True achromatic (ignores accent entirely)
+ * - monotone: Single-hue tints/shades derived from accent color
  */
-export type ColorPalette = 'natural' | 'warm' | 'cool' | 'monochrome' | 'vibrant';
+export type ColorPalette = 'natural' | 'warm' | 'cool' | 'grayscale' | 'vibrant' | 'monotone';
 
 /**
  * Timing curve presets for generation pacing

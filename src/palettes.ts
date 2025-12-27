@@ -36,7 +36,7 @@ export const flowerPalettes: Record<ColorPalette, string[]> = {
     '#87CEEB', '#B0E0E6', '#ADD8E6', '#E6E6FA',
     '#FFFEF0', '#F0F8FF',
   ],
-  monochrome: [
+  grayscale: [
     '#FFFFFF', '#F5F5F5', '#E8E8E8', '#DCDCDC',
     '#D3D3D3', '#C0C0C0', '#A9A9A9', '#989898',
   ],
@@ -45,6 +45,8 @@ export const flowerPalettes: Record<ColorPalette, string[]> = {
     '#00CED1', '#1E90FF', '#9400D3', '#FF69B4',
     '#FFA500', '#ADFF2F',
   ],
+  // Monotone colors are generated dynamically from accent
+  monotone: [],
 };
 
 /**
@@ -63,13 +65,18 @@ export const foliagePalettes: Record<ColorPalette, { leaves: string[]; stems: st
     leaves: ['#2E8B57', '#20B2AA', '#3CB371', '#00FA9A', '#66CDAA'],
     stems: ['#2D5A47', '#3D6B57', '#4A7C60', '#5D8A72'],
   },
-  monochrome: {
+  grayscale: {
     leaves: ['#696969', '#808080', '#A9A9A9', '#778899', '#708090'],
     stems: ['#4D4D4D', '#5D5D5D', '#6A6A6A', '#7D7D7D'],
   },
   vibrant: {
     leaves: ['#00FF00', '#32CD32', '#00FA9A', '#7FFF00', '#ADFF2F'],
     stems: ['#228B22', '#008000', '#006400', '#2E8B57'],
+  },
+  // Monotone foliage is generated dynamically from accent
+  monotone: {
+    leaves: [],
+    stems: [],
   },
 };
 
@@ -87,6 +94,42 @@ export function generateAccentVariants(accent: string): string[] {
 }
 
 /**
+ * Generate monotone flower colors (tints and shades of a single hue)
+ */
+export function generateMonotoneFlowerColors(accent: string): string[] {
+  return [
+    lightenColor(accent, 0.45),  // Very light tint
+    lightenColor(accent, 0.3),   // Light tint
+    lightenColor(accent, 0.15),  // Slight tint
+    accent,                       // Original
+    darkenColor(accent, 0.1),    // Slight shade
+    darkenColor(accent, 0.2),    // Medium shade
+    darkenColor(accent, 0.35),   // Dark shade
+  ];
+}
+
+/**
+ * Generate monotone foliage colors (desaturated/darkened accent variants)
+ */
+export function generateMonotoneFoliageColors(accent: string): { leaves: string[]; stems: string[] } {
+  return {
+    leaves: [
+      darkenColor(accent, 0.25),
+      darkenColor(accent, 0.35),
+      darkenColor(accent, 0.3),
+      darkenColor(accent, 0.4),
+      darkenColor(accent, 0.2),
+    ],
+    stems: [
+      darkenColor(accent, 0.5),
+      darkenColor(accent, 0.55),
+      darkenColor(accent, 0.6),
+      darkenColor(accent, 0.45),
+    ],
+  };
+}
+
+/**
  * Build flower color array with accent weighting
  */
 export function buildFlowerColors(options: Required<ColorOptions>): string[] {
@@ -95,6 +138,17 @@ export function buildFlowerColors(options: Required<ColorOptions>): string[] {
     return options.flowerColors;
   }
 
+  // Grayscale ignores accent entirely - pure achromatic
+  if (options.palette === 'grayscale') {
+    return flowerPalettes.grayscale;
+  }
+
+  // Monotone derives all colors from accent
+  if (options.palette === 'monotone') {
+    return generateMonotoneFlowerColors(options.accent);
+  }
+
+  // Standard palettes mix base colors with accent variants
   const baseColors = flowerPalettes[options.palette];
   const accentVariants = generateAccentVariants(options.accent);
 
@@ -133,5 +187,11 @@ export function buildFoliageColors(
     };
   }
 
+  // Monotone derives foliage from accent
+  if (options.palette === 'monotone') {
+    return generateMonotoneFoliageColors(options.accent);
+  }
+
+  // Grayscale and other palettes use predefined foliage
   return foliagePalettes[options.palette];
 }

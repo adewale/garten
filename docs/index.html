@@ -89,8 +89,26 @@
       background: #666;
     }
 
-    button.secondary:hover {
+    button.secondary:hover:not(:disabled) {
       background: #555;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    button:disabled:hover {
+      background: inherit;
+    }
+
+    button.active {
+      background: #2E7D32;
+    }
+
+    button.active:hover {
+      background: #1B5E20;
     }
 
     button.scene-btn {
@@ -318,44 +336,86 @@
     <!-- Playback Controls -->
     <div class="controls hideable-panel">
       <button id="playBtn">Play</button>
-      <button id="pauseBtn" class="secondary">Pause</button>
-      <button id="stopBtn" class="secondary">Stop</button>
+      <button id="pauseBtn" class="secondary" disabled>Pause</button>
+      <button id="stopBtn" class="secondary" disabled>Stop</button>
       <button id="regenBtn" class="secondary">Regenerate</button>
 
-      <select id="speedSelect">
-        <option value="0.5">0.5x</option>
-        <option value="1" selected>1x</option>
-        <option value="2">2x</option>
-        <option value="5">5x</option>
-        <option value="10">10x</option>
-        <option value="20">20x</option>
-      </select>
+      <label>
+        Speed:
+        <select id="speedSelect">
+          <option value="0.5">0.5x</option>
+          <option value="1" selected>1x</option>
+          <option value="2">2x</option>
+          <option value="5">5x</option>
+          <option value="10">10x</option>
+          <option value="20">20x</option>
+        </select>
+      </label>
 
-      <select id="densitySelect">
-        <option value="sparse">Sparse</option>
-        <option value="normal" selected>Normal</option>
-        <option value="dense">Dense</option>
-        <option value="lush">Lush</option>
-      </select>
+      <label>
+        Density:
+        <select id="densitySelect">
+          <option value="sparse">Sparse</option>
+          <option value="normal" selected>Normal</option>
+          <option value="dense">Dense</option>
+          <option value="lush">Lush</option>
+        </select>
+      </label>
 
-      <select id="timingCurveSelect">
-        <option value="linear" selected>Linear</option>
-        <option value="ease-out">Ease Out (fast start)</option>
-        <option value="ease-in">Ease In (slow start)</option>
-        <option value="ease-in-out">Ease In-Out</option>
-      </select>
+      <label>
+        Timing:
+        <select id="timingCurveSelect">
+          <option value="linear" selected>Linear</option>
+          <option value="ease-out">Ease Out</option>
+          <option value="ease-in">Ease In</option>
+          <option value="ease-in-out">Ease In-Out</option>
+        </select>
+      </label>
 
-      <select id="durationSelect">
-        <option value="30">30 sec</option>
-        <option value="60">1 min</option>
-        <option value="120" selected>2 min</option>
-        <option value="300">5 min</option>
-        <option value="600">10 min</option>
-      </select>
+      <label>
+        Duration:
+        <select id="durationSelect">
+          <option value="30">30 sec</option>
+          <option value="60">1 min</option>
+          <option value="120" selected>2 min</option>
+          <option value="300">5 min</option>
+          <option value="600">10 min</option>
+        </select>
+      </label>
 
       <label>
         Accent:
         <input type="color" id="accentColor" value="#F6821F">
+      </label>
+
+      <label>
+        Palette:
+        <select id="paletteSelect">
+          <option value="natural" selected>Natural</option>
+          <option value="warm">Warm</option>
+          <option value="cool">Cool</option>
+          <option value="vibrant">Vibrant</option>
+          <option value="grayscale">Grayscale</option>
+          <option value="monotone">Monotone</option>
+        </select>
+      </label>
+
+      <label>
+        Accent Weight:
+        <input type="range" id="accentWeightSlider" min="0" max="100" value="40">
+        <span id="accentWeightValue">40%</span>
+      </label>
+
+      <label>
+        Opacity:
+        <input type="range" id="opacitySlider" min="10" max="100" value="100">
+        <span id="opacityValue">100%</span>
+      </label>
+
+      <label>
+        Generations:
+        <input type="range" id="generationsSlider" min="10" max="100" value="47">
+        <span id="generationsValue">47</span>
       </label>
 
       <label>
@@ -372,6 +432,7 @@
       <label>
         Seek:
         <input type="range" id="seekSlider" min="0" max="100" value="0">
+        <span id="seekTime">0:00 / 2:00</span>
       </label>
 
       <div class="status">
@@ -519,7 +580,7 @@
           maxHeight: 0.15,
           density: 'sparse',
           categories: ['grass', 'succulent'],
-          colors: { accent: '#607D8B', palette: 'monochrome' }
+          colors: { accent: '#607D8B', palette: 'grayscale' }
         }
       }
     };
@@ -527,8 +588,10 @@
     // Current configuration state
     let currentConfig = {
       duration: 120,
+      generations: 47,
       maxHeight: 0.35,
       density: 'normal',
+      opacity: 1,
       categories: null,
       colors: {
         accent: '#F6821F',
@@ -549,11 +612,13 @@
       events: {
         onStateChange: (state) => {
           document.getElementById('stateDisplay').textContent = `State: ${state}`;
+          updateButtonStates(state);
         },
         onProgress: (progress, elapsed) => {
           document.getElementById('progressDisplay').textContent = `Progress: ${(progress * 100).toFixed(1)}%`;
           if (document.activeElement !== document.getElementById('seekSlider')) {
             document.getElementById('seekSlider').value = progress * 100;
+            updateSeekTimeDisplay(elapsed, currentConfig.duration);
           }
         },
         onGenerationComplete: (gen, total) => {
@@ -658,6 +723,27 @@
         document.getElementById('accentColor').value = scene.config.colors.accent;
       }
 
+      if (scene.config.colors?.palette) {
+        document.getElementById('paletteSelect').value = scene.config.colors.palette;
+      }
+
+      if (scene.config.colors?.accentWeight !== undefined) {
+        const weightPercent = Math.round(scene.config.colors.accentWeight * 100);
+        document.getElementById('accentWeightSlider').value = weightPercent;
+        document.getElementById('accentWeightValue').textContent = `${weightPercent}%`;
+      }
+
+      if (scene.config.opacity !== undefined) {
+        const opacityPercent = Math.round(scene.config.opacity * 100);
+        document.getElementById('opacitySlider').value = opacityPercent;
+        document.getElementById('opacityValue').textContent = `${opacityPercent}%`;
+      }
+
+      if (scene.config.generations !== undefined) {
+        document.getElementById('generationsSlider').value = scene.config.generations;
+        document.getElementById('generationsValue').textContent = scene.config.generations;
+      }
+
       setCheckboxes(scene.config.categories);
       updateConfigDisplay();
       highlightActiveScene(name);
@@ -755,13 +841,62 @@
       updateCategoriesFromCheckboxes();
     };
 
+    // Update button states based on playback state
+    function updateButtonStates(state) {
+      const playBtn = document.getElementById('playBtn');
+      const pauseBtn = document.getElementById('pauseBtn');
+      const stopBtn = document.getElementById('stopBtn');
+
+      // Reset all buttons
+      playBtn.disabled = false;
+      pauseBtn.disabled = false;
+      stopBtn.disabled = false;
+      playBtn.classList.remove('active');
+      pauseBtn.classList.remove('active');
+
+      switch (state) {
+        case 'idle':
+          // Can play, can't pause or stop
+          pauseBtn.disabled = true;
+          stopBtn.disabled = true;
+          break;
+        case 'playing':
+          // Can pause or stop, play shows as active
+          playBtn.classList.add('active');
+          playBtn.disabled = true;
+          break;
+        case 'paused':
+          // Can play (resume) or stop, pause shows as active
+          pauseBtn.classList.add('active');
+          pauseBtn.disabled = true;
+          break;
+        case 'complete':
+          // Can play (restart), can't pause, can stop (reset)
+          pauseBtn.disabled = true;
+          break;
+      }
+    }
+
     // Playback controls
     document.getElementById('playBtn').onclick = () => garden.play();
     document.getElementById('pauseBtn').onclick = () => garden.pause();
-    document.getElementById('stopBtn').onclick = () => garden.stop();
+    document.getElementById('stopBtn').onclick = () => {
+      garden.stop();
+      // Reset seek slider to 0
+      document.getElementById('seekSlider').value = 0;
+      updateSeekTimeDisplay(0, currentConfig.duration);
+    };
     document.getElementById('regenBtn').onclick = () => {
-      garden.regenerate();
+      // Generate new random seed for a fresh garden
+      const newSeed = Math.floor(Math.random() * 100000);
+      currentConfig.seed = newSeed;
+      document.getElementById('seedInput').value = newSeed;
+      garden.setOptions({ seed: newSeed });
+      garden.seek(0);  // Reset playback position
       updateConfigDisplay();
+      // Reset seek slider to 0
+      document.getElementById('seekSlider').value = 0;
+      updateSeekTimeDisplay(0, currentConfig.duration);
     };
 
     document.getElementById('speedSelect').onchange = (e) => {
@@ -784,11 +919,45 @@
       currentConfig.duration = parseInt(e.target.value);
       garden.setOptions({ duration: currentConfig.duration });
       updateConfigDisplay();
+      // Update time display based on current slider position
+      const sliderValue = parseFloat(document.getElementById('seekSlider').value);
+      const currentTime = (sliderValue / 100) * currentConfig.duration;
+      updateSeekTimeDisplay(currentTime, currentConfig.duration);
     };
 
     document.getElementById('accentColor').onchange = (e) => {
       currentConfig.colors.accent = e.target.value;
       garden.setOptions({ colors: { accent: e.target.value } });
+      updateConfigDisplay();
+    };
+
+    document.getElementById('paletteSelect').onchange = (e) => {
+      currentConfig.colors.palette = e.target.value;
+      garden.setOptions({ colors: { palette: e.target.value } });
+      updateConfigDisplay();
+    };
+
+    document.getElementById('accentWeightSlider').oninput = (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('accentWeightValue').textContent = `${value}%`;
+      currentConfig.colors.accentWeight = value / 100;
+      garden.setOptions({ colors: { accentWeight: value / 100 } });
+      updateConfigDisplay();
+    };
+
+    document.getElementById('opacitySlider').oninput = (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('opacityValue').textContent = `${value}%`;
+      currentConfig.opacity = value / 100;
+      garden.setOptions({ opacity: value / 100 });
+      updateConfigDisplay();
+    };
+
+    document.getElementById('generationsSlider').oninput = (e) => {
+      const value = parseInt(e.target.value);
+      document.getElementById('generationsValue').textContent = value;
+      currentConfig.generations = value;
+      garden.setOptions({ generations: value });
       updateConfigDisplay();
     };
 
@@ -807,9 +976,23 @@
       updateConfigDisplay();
     };
 
+    // Format seconds as m:ss
+    function formatTime(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    // Update seek time display
+    function updateSeekTimeDisplay(currentTime, totalTime) {
+      document.getElementById('seekTime').textContent =
+        `${formatTime(currentTime)} / ${formatTime(totalTime)}`;
+    }
+
     document.getElementById('seekSlider').oninput = (e) => {
       const time = (e.target.value / 100) * currentConfig.duration;
       garden.seek(time);
+      updateSeekTimeDisplay(time, currentConfig.duration);
     };
 
     // Panel toggle
@@ -824,6 +1007,7 @@
     generateSceneButtons();
     generateCategoryCheckboxes();
     updateConfigDisplay();
+    updateButtonStates('idle');
     garden.seek(0);
   </script>
 </body>

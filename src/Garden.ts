@@ -109,8 +109,9 @@ export class Garten implements GardenController {
     const progress = Math.min(1, this.elapsedTime / this.options.duration);
     this.options.events.onProgress?.(progress, this.elapsedTime);
 
-    // Render frame
-    this.renderer.render(this.plants, this.elapsedTime);
+    // Render frame (clamp time to prevent overflow beyond duration)
+    const renderTime = Math.min(this.elapsedTime, this.options.duration);
+    this.renderer.render(this.plants, renderTime);
 
     // Check for completion
     if (this.elapsedTime >= this.options.duration) {
@@ -215,6 +216,17 @@ export class Garten implements GardenController {
 
     // Render at new position
     this.renderer.render(this.plants, clampedTime);
+
+    // If seeking to the end, transition to complete (unless looping)
+    if (clampedTime >= this.options.duration && !this.options.loop) {
+      if (this.animationId !== null) {
+        cancelAnimationFrame(this.animationId);
+        this.animationId = null;
+      }
+      this.state = 'complete';
+      this.emitStateChange();
+      this.options.events.onComplete?.();
+    }
   }
 
   /**
@@ -269,12 +281,53 @@ export class Garten implements GardenController {
       newOptions.density !== undefined ||
       newOptions.maxHeight !== undefined ||
       newOptions.colors !== undefined ||
-      newOptions.seed !== undefined;
+      newOptions.seed !== undefined ||
+      newOptions.categories !== undefined ||
+      newOptions.timingCurve !== undefined ||
+      newOptions.duration !== undefined;
 
-    // Merge options
+    // Deep merge colors to preserve existing sub-properties
+    const mergedColors = newOptions.colors
+      ? {
+          accent: this.options.colors.accent,
+          palette: this.options.colors.palette,
+          accentWeight: this.options.colors.accentWeight,
+          flowerColors: this.options.colors.flowerColors,
+          foliageColors: this.options.colors.foliageColors,
+          ...newOptions.colors,
+        }
+      : undefined;
+
+    // Merge options, preserving existing values
     this.options = resolveOptions({
       container: this.options.container,
+      duration: this.options.duration,
+      generations: this.options.generations,
+      maxHeight: this.options.maxHeight,
+      density: this.options.density,
+      categories: this.options.categories ?? undefined,
+      seed: this.options.seed,
+      timingCurve: this.options.timingCurve,
+      opacity: this.options.opacity,
+      zIndex: this.options.zIndex,
+      loop: this.options.loop,
+      speed: this.options.speed,
+      autoplay: this.options.autoplay,
+      respectReducedMotion: this.options.respectReducedMotion,
+      maxPixelRatio: this.options.maxPixelRatio,
+      targetFPS: this.options.targetFPS,
+      fadeHeight: this.options.fadeHeight,
+      fadeColor: this.options.fadeColor,
+      events: this.options.events,
+      colors: {
+        accent: this.options.colors.accent,
+        palette: this.options.colors.palette,
+        accentWeight: this.options.colors.accentWeight,
+        flowerColors: this.options.colors.flowerColors,
+        foliageColors: this.options.colors.foliageColors,
+      },
       ...newOptions,
+      ...(mergedColors ? { colors: mergedColors } : {}),
     });
 
     // Update renderer

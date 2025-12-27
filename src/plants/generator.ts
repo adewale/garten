@@ -481,7 +481,9 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
 
       // Timing - use warped generation duration for proper pacing
       const delay = genDelay + plantRand() * genDuration * 0.5;
-      const growDuration = genDuration * randomRange(0.6, 1.0, plantRand);
+      const rawGrowDuration = genDuration * randomRange(0.6, 1.0, plantRand);
+      // Ensure plant finishes within animation duration
+      const growDuration = Math.min(rawGrowDuration, duration - delay);
 
       // Visual properties
       const petals = 5 + Math.floor(plantRand() * 4);

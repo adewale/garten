@@ -42,11 +42,11 @@ export const themes: Record<string, GardenTheme> = {
   },
 
   /**
-   * Elegant monochrome garden
+   * Elegant grayscale garden
    */
-  monochrome: {
-    name: 'Monochrome',
-    palette: 'monochrome',
+  grayscale: {
+    name: 'Grayscale',
+    palette: 'grayscale',
     accent: '#666666',
     fadeColor: '#F5F5F5',
   },
@@ -123,7 +123,7 @@ export const themes: Record<string, GardenTheme> = {
    */
   zen: {
     name: 'Zen',
-    palette: 'monochrome',
+    palette: 'grayscale',
     accent: '#8B8B83',
     flowerColors: ['#FFFFFF', '#F5F5F5', '#E8E8E8', '#98FB98'],
     foliageColors: ['#556B2F', '#6B8E23'],

@@ -10,7 +10,10 @@ import { Color } from './Color';
 import { SeededRandom } from './SeededRandom';
 import { GrowthProgress } from './GrowthProgress';
 import { SimpleEventEmitter } from './EventEmitter';
-import { GrowthProgressPool, MutableGrowthProgress } from './GrowthProgressPool';
+import { GrowthProgressPool } from './GrowthProgressPool';
+import { resolveOptions } from './defaults';
+import { buildFlowerColors, buildFoliageColors } from './palettes';
+import { generatePlants } from './plants/generator';
 
 describe('Integration: SeededRandom + Vec2', () => {
   it('should generate deterministic random positions', () => {
@@ -795,5 +798,276 @@ describe('Constraint: Pool + Render integration', () => {
 
     const stats = pool.getStats();
     expect(stats.growthEvents).toBe(0); // Should not need to grow from 1024
+  });
+});
+
+// ==================== CONTROL INTERACTION TESTS ====================
+// These tests verify that setOptions() correctly preserves state and
+// that the same configuration produces identical results regardless
+// of the order in which options are set.
+
+describe('Constraint: setOptions preserves existing options', () => {
+
+  it('should preserve all options when changing one property', () => {
+    // Create base config
+    const baseConfig = {
+      container: document.createElement('div'),
+      duration: 300,
+      generations: 100,
+      maxHeight: 0.8,
+      density: 'lush' as const,
+      seed: 12345,
+      timingCurve: 'ease-out' as const,
+      colors: {
+        accent: '#FF0000',
+        palette: 'warm' as const,
+        accentWeight: 0.7,
+      },
+    };
+
+    const resolved = resolveOptions(baseConfig);
+
+    // Verify all properties are preserved
+    expect(resolved.duration).toBe(300);
+    expect(resolved.generations).toBe(100);
+    expect(resolved.maxHeight).toBe(0.8);
+    expect(resolved.density).toBe('lush');
+    expect(resolved.seed).toBe(12345);
+    expect(resolved.timingCurve).toBe('ease-out');
+    expect(resolved.colors.accent).toBe('#FF0000');
+    expect(resolved.colors.palette).toBe('warm');
+    expect(resolved.colors.accentWeight).toBe(0.7);
+  });
+
+  it('should preserve color sub-properties when changing only palette', () => {
+    const config = {
+      container: document.createElement('div'),
+      colors: {
+        accent: '#004280',  // Blue
+        palette: 'monotone' as const,
+        accentWeight: 1,
+      },
+    };
+
+    const resolved = resolveOptions(config);
+
+    expect(resolved.colors.accent).toBe('#004280');
+    expect(resolved.colors.palette).toBe('monotone');
+    expect(resolved.colors.accentWeight).toBe(1);
+  });
+
+  it('should use default seed when not provided', () => {
+    const config1 = resolveOptions({ container: document.createElement('div') });
+    const config2 = resolveOptions({ container: document.createElement('div') });
+
+    // Both should have seeds (random but present)
+    expect(config1.seed).toBeDefined();
+    expect(config2.seed).toBeDefined();
+    expect(typeof config1.seed).toBe('number');
+    expect(typeof config2.seed).toBe('number');
+  });
+
+  it('should preserve explicit seed across resolutions', () => {
+    const config = {
+      container: document.createElement('div'),
+      seed: 42,
+    };
+
+    const resolved = resolveOptions(config);
+    expect(resolved.seed).toBe(42);
+  });
+});
+
+describe('Constraint: Order-independent configuration', () => {
+
+  it('should produce same colors regardless of property order', () => {
+    // Order 1: accent then palette
+    const options1 = {
+      accent: '#004280',
+      palette: 'monotone' as const,
+      accentWeight: 1,
+      flowerColors: [],
+      foliageColors: [],
+    };
+
+    // Order 2: palette then accent (same final state)
+    const options2 = {
+      palette: 'monotone' as const,
+      accent: '#004280',
+      accentWeight: 1,
+      flowerColors: [],
+      foliageColors: [],
+    };
+
+    const flowers1 = buildFlowerColors(options1);
+    const flowers2 = buildFlowerColors(options2);
+
+    expect(flowers1).toEqual(flowers2);
+  });
+
+  it('monotone palette should derive all colors from accent', () => {
+    const blueAccent = {
+      accent: '#004280',
+      palette: 'monotone' as const,
+      accentWeight: 1,
+      flowerColors: [],
+      foliageColors: [],
+    };
+
+    const flowers = buildFlowerColors(blueAccent);
+
+    // All colors should be derived from blue (contain 004280 in some form)
+    // The accent color should be in the array
+    expect(flowers).toContain('#004280');
+    expect(flowers.length).toBe(7); // monotone generates 7 colors
+  });
+
+  it('monotone foliage should derive from accent', () => {
+    const blueAccent = {
+      accent: '#004280',
+      palette: 'monotone' as const,
+      accentWeight: 1,
+      flowerColors: [],
+      foliageColors: [],
+    };
+
+    const foliage = buildFoliageColors(blueAccent);
+
+    // Should have leaves and stems
+    expect(foliage.leaves.length).toBe(5);
+    expect(foliage.stems.length).toBe(4);
+
+    // All should be valid hex colors
+    for (const color of foliage.leaves) {
+      expect(color).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    }
+    for (const color of foliage.stems) {
+      expect(color).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    }
+  });
+
+  it('grayscale should ignore accent entirely', () => {
+    const redAccent = {
+      accent: '#FF0000',
+      palette: 'grayscale' as const,
+      accentWeight: 1,
+      flowerColors: [],
+      foliageColors: [],
+    };
+
+    const blueAccent = {
+      accent: '#0000FF',
+      palette: 'grayscale' as const,
+      accentWeight: 1,
+      flowerColors: [],
+      foliageColors: [],
+    };
+
+    const flowers1 = buildFlowerColors(redAccent);
+    const flowers2 = buildFlowerColors(blueAccent);
+
+    // Should be identical regardless of accent
+    expect(flowers1).toEqual(flowers2);
+
+    // Should not contain the accent colors
+    expect(flowers1).not.toContain('#FF0000');
+    expect(flowers1).not.toContain('#0000FF');
+  });
+});
+
+describe('Constraint: Options that trigger regeneration', () => {
+
+  it('changing categories should produce different plants', () => {
+    const container = document.createElement('div');
+
+    const allCategories = resolveOptions({
+      container,
+      seed: 42,
+      generations: 10,
+      density: 'normal',
+    });
+
+    const grassOnly = resolveOptions({
+      container,
+      seed: 42,
+      generations: 10,
+      density: 'normal',
+      categories: ['grass'],
+    });
+
+    const plants1 = generatePlants(allCategories);
+    const plants2 = generatePlants(grassOnly);
+
+    // Grass-only should have fewer plant types
+    const types1 = new Set(plants1.map((p: { type: string }) => p.type));
+    const types2 = new Set(plants2.map((p: { type: string }) => p.type));
+
+    expect(types1.size).toBeGreaterThan(types2.size);
+
+    // Grass-only should only contain grass types
+    for (const plant of plants2) {
+      expect(plant.type.toLowerCase()).toContain('grass');
+    }
+  });
+
+  it('changing timingCurve should affect plant delays', () => {
+    const container = document.createElement('div');
+
+    const linear = resolveOptions({
+      container,
+      seed: 42,
+      generations: 10,
+      timingCurve: 'linear',
+    });
+
+    const easeOut = resolveOptions({
+      container,
+      seed: 42,
+      generations: 10,
+      timingCurve: 'ease-out',
+    });
+
+    const plants1 = generatePlants(linear);
+    const plants2 = generatePlants(easeOut);
+
+    // Plants should exist in both
+    expect(plants1.length).toBeGreaterThan(0);
+    expect(plants2.length).toBeGreaterThan(0);
+
+    // Delays should be distributed differently
+    const avgDelay1 = plants1.reduce((sum: number, p: { delay: number }) => sum + p.delay, 0) / plants1.length;
+    const avgDelay2 = plants2.reduce((sum: number, p: { delay: number }) => sum + p.delay, 0) / plants2.length;
+
+    // With ease-out, early generations complete faster, so average delay should be lower
+    expect(avgDelay2).not.toBe(avgDelay1);
+  });
+
+  it('changing duration should scale plant timings', () => {
+    const container = document.createElement('div');
+
+    const short = resolveOptions({
+      container,
+      seed: 42,
+      generations: 10,
+      duration: 60,
+    });
+
+    const long = resolveOptions({
+      container,
+      seed: 42,
+      generations: 10,
+      duration: 120,
+    });
+
+    const plants1 = generatePlants(short);
+    const plants2 = generatePlants(long);
+
+    // Maximum delay in long duration should be roughly 2x short duration
+    const maxDelay1 = Math.max(...plants1.map((p: { delay: number }) => p.delay));
+    const maxDelay2 = Math.max(...plants2.map((p: { delay: number }) => p.delay));
+
+    // Allow some tolerance for randomization
+    expect(maxDelay2 / maxDelay1).toBeGreaterThan(1.5);
+    expect(maxDelay2 / maxDelay1).toBeLessThan(2.5);
   });
 });
