@@ -252,7 +252,7 @@ export const presets: Record<string, GardenPreset> = {
       generations: 40,
       density: 'dense',
       maxHeight: 0.7,
-      categories: ['tropical', 'orchid', 'lily', 'bird-of-paradise', 'fern'],
+      categories: ['tropical', 'orchid', 'lily', 'fern'],
     },
   },
 

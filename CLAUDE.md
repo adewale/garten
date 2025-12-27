@@ -23,13 +23,13 @@ This is a TypeScript canvas animation library that renders an animated garden wi
 
 - **`src/plants/generator.ts`** - Plant generation logic. Creates `PlantData` objects distributed across generations with randomized properties.
 
-- **`src/plants/renderers.ts`** - Drawing functions for 100 plant types across 13 categories. Uses category-based dispatch with parametric variations for efficiency.
+- **`src/plants/renderers.ts`** - Drawing functions for 147 plant types across 19 categories. Uses category-based dispatch with parametric variations for efficiency.
 
 - **`src/types.ts`** - All TypeScript interfaces and types including `GardenOptions`, `PlantData`, `GardenController`.
 
 - **`src/defaults.ts`** - Default option values and `resolveOptions()` function that normalizes user input.
 
-- **`src/palettes.ts`** - Color palette definitions (natural, warm, cool, monochrome, vibrant) for flowers and foliage. For color manipulation, see `Color.ts`.
+- **`src/palettes.ts`** - Color palette definitions (natural, warm, cool, grayscale, vibrant, monotone) for flowers and foliage. For color manipulation, see `Color.ts`.
 
 - **`src/utils.ts`** - Seeded random number generator and utility functions like `prefersReducedMotion()`.
 
@@ -49,11 +49,11 @@ This is a TypeScript canvas animation library that renders an animated garden wi
 
 ### Plant Type Architecture
 
-101 plant types are organized into 13 categories (SimpleFlower, Tulip, Daisy, Wildflower, Grass, Fern, Bush, Rose, Lily, Orchid, Succulent, Herb, Specialty). Each category shares a base renderer with parametric variations controlling size, height, petal count, thickness, and lean. This design minimizes code duplication while maintaining visual diversity.
+147 plant types are organized into 19 categories (SimpleFlower, Tulip, Daisy, Wildflower, Grass, Fern, Bush, Rose, Lily, Orchid, Succulent, Herb, Specialty, TallFlower, GiantGrass, Climber, SmallTree, Tropical, Conifer). Each category shares a base renderer with parametric variations controlling size, height, petal count, thickness, and lean. This design minimizes code duplication while maintaining visual diversity.
 
 ### Timing Curve System
 
-The `timingCurve` option controls how time is distributed across generations. Implemented via `applyTimingCurve()` in `defaults.ts`, it warps generation start times:
+The `timingCurve` option controls how time is distributed across generations. Implemented via `applyTimingCurve()` in `utils.ts`, it warps generation start times:
 
 - `'linear'` (default): Equal time per generation
 - `'ease-out'`: Early generations complete quickly, later ones slow down

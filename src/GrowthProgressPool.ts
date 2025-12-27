@@ -340,7 +340,7 @@ export class GrowthProgressPool {
     this.inFrame = false;
 
     // Check for shrink opportunity
-    this.maybesShrink(frameUsage);
+    this.maybeShrink(frameUsage);
   }
 
   /**
@@ -432,7 +432,7 @@ export class GrowthProgressPool {
   /**
    * Check if pool should shrink and do so if appropriate
    */
-  private maybesShrink(frameUsage: number): void {
+  private maybeShrink(frameUsage: number): void {
     // Don't shrink below initial size
     if (this.pool.length <= this.initialSize) {
       this.consecutiveLowUsageFrames = 0;

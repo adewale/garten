@@ -53,7 +53,7 @@ const garden = new Garten({
   // Colors
   colors: {
     accent: '#F6821F',     // Cloudflare orange (default)
-    palette: 'natural',    // 'natural' | 'warm' | 'cool' | 'vibrant' | 'monochrome'
+    palette: 'natural',    // 'natural' | 'warm' | 'cool' | 'vibrant' | 'grayscale' | 'monotone'
     accentWeight: 0.4,     // 40% of flowers use accent color
   },
 
@@ -90,7 +90,7 @@ Only `container` is required. Everything else has sensible defaults.
 | `maxHeight` | `number` | `0.35` | Max plant height (0-1). Higher values add taller plants (trees at 1.0) |
 | `density` | `'sparse'` \| `'normal'` \| `'dense'` \| `'lush'` | `'normal'` | How many plants |
 | `colors.accent` | `string` | `'#F6821F'` | Primary accent color (hex) |
-| `colors.palette` | `'natural'` \| `'warm'` \| `'cool'` \| `'vibrant'` \| `'monochrome'` | `'natural'` | Color palette |
+| `colors.palette` | `'natural'` \| `'warm'` \| `'cool'` \| `'vibrant'` \| `'grayscale'` \| `'monotone'` | `'natural'` | Color palette |
 | `speed` | `number` | `1` | Playback speed multiplier |
 | `loop` | `boolean` | `false` | Restart when complete |
 | `seed` | `number` | random | Fixed seed for reproducible gardens |
