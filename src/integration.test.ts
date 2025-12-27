@@ -4,7 +4,7 @@
  * work correctly in combination as they would in actual garden rendering.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Vec2, MutableVec2 } from './Vec2';
 import { Color } from './Color';
 import { SeededRandom } from './SeededRandom';
@@ -14,7 +14,7 @@ import { GrowthProgressPool } from './GrowthProgressPool';
 import { resolveOptions } from './defaults';
 import { buildFlowerColors, buildFoliageColors } from './palettes';
 import { generatePlants } from './plants/generator';
-import { applyPreset, createConfig, applyTheme } from './presets';
+import { applyPreset, createConfig } from './presets';
 
 describe('Integration: SeededRandom + Vec2', () => {
   it('should generate deterministic random positions', () => {
@@ -1174,5 +1174,218 @@ describe('Constraint: Options that trigger regeneration', () => {
     // Allow some tolerance for randomization
     expect(maxDelay2 / maxDelay1).toBeGreaterThan(1.5);
     expect(maxDelay2 / maxDelay1).toBeLessThan(2.5);
+  });
+});
+
+// ==================== ENVIRONMENT TESTS ====================
+
+import { Environment } from './Environment';
+
+// Mock matchMedia for test environment
+const mockMatchMedia = vi.fn().mockImplementation((query: string) => ({
+  matches: false,
+  media: query,
+  onchange: null,
+  addListener: vi.fn(),
+  removeListener: vi.fn(),
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn(),
+  dispatchEvent: vi.fn(),
+}));
+
+describe('Constraint: Environment cache behavior', () => {
+  beforeEach(() => {
+    // Clear cache before each test
+    Environment.clearCache();
+    // Mock matchMedia
+    vi.stubGlobal('matchMedia', mockMatchMedia);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('should cache detection results for performance', () => {
+    const env1 = Environment.detect();
+    const env2 = Environment.detect();
+
+    // Should return the same cached object
+    expect(env1).toBe(env2);
+  });
+
+  it('getPixelRatio should return fresh values (not cached)', () => {
+    // First call to cache the environment
+    Environment.detect();
+
+    // getPixelRatio should get fresh values, not cached
+    const ratio1 = Environment.getPixelRatio(3);
+    const ratio2 = Environment.getPixelRatio(3);
+
+    // Both should be valid numbers
+    expect(typeof ratio1).toBe('number');
+    expect(typeof ratio2).toBe('number');
+    expect(ratio1).toBeGreaterThan(0);
+    expect(ratio2).toBeGreaterThan(0);
+  });
+
+  it('getPixelRatio should respect max parameter', () => {
+    const ratio = Environment.getPixelRatio(1);
+    expect(ratio).toBeLessThanOrEqual(1);
+
+    const ratio2 = Environment.getPixelRatio(0.5);
+    expect(ratio2).toBeLessThanOrEqual(0.5);
+  });
+
+  it('getPixelRatio should return updated value when devicePixelRatio changes', () => {
+    const originalDPR = window.devicePixelRatio;
+    try {
+      Object.defineProperty(window, 'devicePixelRatio', { value: 1, configurable: true, writable: true });
+      const ratio1 = Environment.getPixelRatio(3);
+
+      Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true, writable: true });
+      const ratio2 = Environment.getPixelRatio(3);
+
+      expect(ratio1).toBe(1);
+      expect(ratio2).toBe(2);
+    } finally {
+      Object.defineProperty(window, 'devicePixelRatio', { value: originalDPR, configurable: true, writable: true });
+    }
+  });
+
+  it('onResize should invalidate cache', () => {
+    // Initial detection
+    const env1 = Environment.detect();
+
+    // Set up resize listener (this will invalidate cache on resize)
+    let resizeCallCount = 0;
+    const cleanup = Environment.onResize(() => {
+      resizeCallCount++;
+    });
+
+    try {
+      // Simulate resize event
+      window.dispatchEvent(new Event('resize'));
+
+      // Cache should be invalidated after resize
+      const env2 = Environment.detect();
+
+      // Should be a new object (cache was cleared)
+      expect(env1).not.toBe(env2);
+      expect(resizeCallCount).toBe(1);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('clearCache should allow fresh detection', () => {
+    const env1 = Environment.detect();
+    Environment.clearCache();
+    const env2 = Environment.detect();
+
+    // After clearing cache, should get a new object
+    expect(env1).not.toBe(env2);
+  });
+
+  it('should detect basic capabilities', () => {
+    const env = Environment.detect();
+
+    // Basic checks - these should always be available in test environment
+    expect(typeof env.isBrowser).toBe('boolean');
+    expect(typeof env.hasCanvas).toBe('boolean');
+    expect(typeof env.hasRAF).toBe('boolean');
+    expect(typeof env.pixelRatio).toBe('number');
+    expect(typeof env.isMobile).toBe('boolean');
+    expect(typeof env.prefersReducedMotion).toBe('boolean');
+  });
+
+  it('onReducedMotionChange should return cleanup function', () => {
+    // Trigger detection first
+    Environment.detect();
+
+    // Set up listener
+    const cleanup = Environment.onReducedMotionChange(() => {
+      // Can't easily trigger media query change in tests
+    });
+
+    try {
+      // Verify the cleanup function works
+      expect(typeof cleanup).toBe('function');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('multiple resize listeners should work correctly', () => {
+    let count1 = 0;
+    let count2 = 0;
+
+    const cleanup1 = Environment.onResize(() => { count1++; });
+    const cleanup2 = Environment.onResize(() => { count2++; });
+
+    try {
+      window.dispatchEvent(new Event('resize'));
+
+      expect(count1).toBe(1);
+      expect(count2).toBe(1);
+    } finally {
+      cleanup1();
+      cleanup2();
+    }
+  });
+
+  it('cleanup should remove listener', () => {
+    let count = 0;
+    const cleanup = Environment.onResize(() => { count++; });
+
+    window.dispatchEvent(new Event('resize'));
+    expect(count).toBe(1);
+
+    cleanup();
+
+    window.dispatchEvent(new Event('resize'));
+    // Count should still be 1 after cleanup
+    expect(count).toBe(1);
+  });
+});
+
+describe('Constraint: Environment utility methods', () => {
+  beforeEach(() => {
+    Environment.clearCache();
+    vi.stubGlobal('matchMedia', mockMatchMedia);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('isSupported should check required capabilities', () => {
+    const supported = Environment.isSupported();
+    expect(typeof supported).toBe('boolean');
+  });
+
+  it('getRecommendedSettings should return valid settings', () => {
+    const settings = Environment.getRecommendedSettings();
+
+    expect(typeof settings.maxPixelRatio).toBe('number');
+    expect(typeof settings.targetFPS).toBe('number');
+    expect(['sparse', 'normal', 'dense']).toContain(settings.density);
+
+    expect(settings.maxPixelRatio).toBeGreaterThan(0);
+    expect(settings.targetFPS).toBeGreaterThan(0);
+  });
+
+  it('isPageVisible should return boolean', () => {
+    const visible = Environment.isPageVisible();
+    expect(typeof visible).toBe('boolean');
+  });
+
+  it('prefersReducedMotion should return boolean', () => {
+    const reduced = Environment.prefersReducedMotion();
+    expect(typeof reduced).toBe('boolean');
+  });
+
+  it('prefersDarkMode should return boolean', () => {
+    const dark = Environment.prefersDarkMode();
+    expect(typeof dark).toBe('boolean');
   });
 });

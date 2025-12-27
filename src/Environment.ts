@@ -196,10 +196,12 @@ export class Environment {
 
   /**
    * Get device pixel ratio, clamped to a maximum
+   * Always gets fresh value as it can change when moving windows between displays
    */
   static getPixelRatio(max: number = 2): number {
-    const env = this.detect();
-    return Math.min(env.pixelRatio, max);
+    if (typeof window === 'undefined') return 1;
+    const current = window.devicePixelRatio || 1;
+    return Math.min(current, max);
   }
 
   /**
@@ -360,6 +362,7 @@ export class Environment {
 
   /**
    * Listen for window resize
+   * Invalidates cache since isMobile and other values depend on window dimensions
    * @returns Cleanup function
    */
   static onResize(callback: (width: number, height: number) => void): () => void {
@@ -368,6 +371,8 @@ export class Environment {
     }
 
     const handler = () => {
+      // Invalidate cache as isMobile, isHighDPI, and pixelRatio can change on resize
+      this._cached = null;
       callback(window.innerWidth, window.innerHeight);
     };
 
