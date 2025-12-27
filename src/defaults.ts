@@ -130,7 +130,7 @@ export function resolveOptions(options: GardenOptions): ResolvedOptions {
     autoplay: options.autoplay ?? defaultOptions.autoplay,
     respectReducedMotion: options.respectReducedMotion ?? defaultOptions.respectReducedMotion,
     seed: clampOption(
-      Number.isFinite(options.seed) ? options.seed! : defaultOptions.seed,
+      Number.isFinite(options.seed) ? options.seed! : Math.random() * 100000,
       'seed'
     ),
     maxPixelRatio: clampOption(options.maxPixelRatio ?? defaultOptions.maxPixelRatio, 'maxPixelRatio'),

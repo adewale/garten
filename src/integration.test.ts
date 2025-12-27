@@ -14,6 +14,7 @@ import { GrowthProgressPool } from './GrowthProgressPool';
 import { resolveOptions } from './defaults';
 import { buildFlowerColors, buildFoliageColors } from './palettes';
 import { generatePlants } from './plants/generator';
+import { applyPreset, createConfig, applyTheme } from './presets';
 
 describe('Integration: SeededRandom + Vec2', () => {
   it('should generate deterministic random positions', () => {
@@ -972,6 +973,110 @@ describe('Constraint: Order-independent configuration', () => {
     // Should not contain the accent colors
     expect(flowers1).not.toContain('#FF0000');
     expect(flowers1).not.toContain('#0000FF');
+  });
+});
+
+describe('Constraint: Unique seed per resolveOptions call', () => {
+  it('should generate different seeds for each call without explicit seed', () => {
+    const container = document.createElement('div');
+
+    const seeds = new Set<number>();
+    for (let i = 0; i < 10; i++) {
+      const resolved = resolveOptions({ container });
+      seeds.add(resolved.seed);
+    }
+
+    // All 10 calls should produce different seeds (extremely unlikely to collide)
+    expect(seeds.size).toBe(10);
+  });
+
+  it('should preserve explicit seed', () => {
+    const container = document.createElement('div');
+    const resolved = resolveOptions({ container, seed: 12345 });
+    expect(resolved.seed).toBe(12345);
+  });
+});
+
+describe('Constraint: Deep merge in preset functions', () => {
+
+  it('applyPreset should preserve user colors when preset has colors', () => {
+    const result = applyPreset('default', {
+      colors: { accent: '#FF0000' }
+    });
+
+    // User's accent should be preserved
+    expect(result.colors?.accent).toBe('#FF0000');
+  });
+
+  it('applyPreset should merge preset colors with user colors', () => {
+    // Create a mock preset with colors
+    const mockPreset = {
+      name: 'Test',
+      options: {
+        duration: 100,
+        colors: { palette: 'warm' as const, accent: '#000000' }
+      }
+    };
+
+    const result = applyPreset(mockPreset, {
+      colors: { accent: '#FF0000' }  // Override just accent
+    });
+
+    // User's accent should override preset's
+    expect(result.colors?.accent).toBe('#FF0000');
+    // Preset's palette should be preserved
+    expect(result.colors?.palette).toBe('warm');
+  });
+
+  it('createConfig should deep merge all layers', () => {
+    // createConfig combines preset + theme + options
+    const result = createConfig('default', 'natural', {
+      colors: { accentWeight: 0.9 }
+    });
+
+    // User's accentWeight should be preserved
+    expect(result.colors?.accentWeight).toBe(0.9);
+    // Should still have other color properties from theme
+    expect(result.colors?.palette).toBeDefined();
+  });
+});
+
+describe('Constraint: Plant timing edge cases', () => {
+  it('growDuration should never be zero', () => {
+    const container = document.createElement('div');
+
+    // Use extreme settings that might produce zero growDuration
+    const resolved = resolveOptions({
+      container,
+      seed: 42,
+      generations: 100,  // Many generations = short per-generation duration
+      duration: 10,      // Short total duration
+    });
+
+    const plants = generatePlants(resolved);
+
+    for (const plant of plants) {
+      expect(plant.growDuration).toBeGreaterThan(0);
+      expect(plant.growDuration).toBeGreaterThanOrEqual(0.001);
+    }
+  });
+
+  it('plant should always complete within duration', () => {
+    const container = document.createElement('div');
+
+    const resolved = resolveOptions({
+      container,
+      seed: 42,
+      generations: 47,
+      duration: 120,
+    });
+
+    const plants = generatePlants(resolved);
+
+    for (const plant of plants) {
+      const completionTime = plant.delay + plant.growDuration;
+      expect(completionTime).toBeLessThanOrEqual(resolved.duration + 0.001);
+    }
   });
 });
 

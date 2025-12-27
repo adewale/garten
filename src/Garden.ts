@@ -333,6 +333,12 @@ export class Garten implements GardenController {
     // Update renderer
     this.renderer.setOptions(this.options);
 
+    // Clamp time-based state if duration was reduced
+    if (newOptions.duration !== undefined) {
+      this.pausedAt = Math.min(this.pausedAt, this.options.duration);
+      this.elapsedTime = Math.min(this.elapsedTime, this.options.duration);
+    }
+
     // Regenerate if needed
     if (needsRegeneration) {
       this.regenerate();
@@ -354,6 +360,11 @@ export class Garten implements GardenController {
     }
 
     this.plants = generatePlants(this.options);
+
+    // Recalculate lastReportedGeneration for new generation count
+    const genDuration = this.options.duration / this.options.generations;
+    const currentGen = genDuration > 0 ? Math.floor(this.elapsedTime / genDuration) : 0;
+    this.lastReportedGeneration = Math.min(currentGen, this.options.generations) - 1;
 
     // Re-render at current position
     this.renderer.render(this.plants, this.elapsedTime);

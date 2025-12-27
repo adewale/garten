@@ -369,9 +369,18 @@ export function applyPreset(
     return options;
   }
 
+  // Deep merge colors to preserve sub-properties
+  const mergedColors = (presetConfig.options.colors || options.colors)
+    ? {
+        ...presetConfig.options.colors,
+        ...options.colors,
+      }
+    : undefined;
+
   return {
     ...presetConfig.options,
     ...options,
+    ...(mergedColors ? { colors: mergedColors } : {}),
   };
 }
 
@@ -388,9 +397,19 @@ export function createConfig(
 ): Partial<GardenOptions> {
   const presetOptions = applyPreset(presetName, {});
   const themedOptions = applyTheme(themeName, presetOptions);
+
+  // Deep merge colors to preserve sub-properties
+  const mergedColors = (themedOptions.colors || options.colors)
+    ? {
+        ...themedOptions.colors,
+        ...options.colors,
+      }
+    : undefined;
+
   return {
     ...themedOptions,
     ...options,
+    ...(mergedColors ? { colors: mergedColors } : {}),
   };
 }
 
