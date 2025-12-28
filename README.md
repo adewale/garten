@@ -91,6 +91,7 @@ Only `container` is required. Everything else has sensible defaults.
 | `density` | `'sparse'` \| `'normal'` \| `'dense'` \| `'lush'` | `'normal'` | How many plants |
 | `colors.accent` | `string` | `'#F6821F'` | Primary accent color (hex) |
 | `colors.palette` | `'natural'` \| `'warm'` \| `'cool'` \| `'vibrant'` \| `'grayscale'` \| `'monotone'` | `'natural'` | Color palette |
+| `categories` | `string[]` | all | Filter to specific plant categories (e.g., `['rose', 'tulip']`) |
 | `speed` | `number` | `1` | Playback speed multiplier |
 | `loop` | `boolean` | `false` | Restart when complete |
 | `seed` | `number` | random | Fixed seed for reproducible gardens |
@@ -115,6 +116,7 @@ Only `container` is required. Everything else has sensible defaults.
 |--------|------|---------|-------------|
 | `maxHeight` | `number` | `0.35` | Max plant height (0-1). Higher values add taller plants (trees at 1.0) |
 | `density` | `string` | `'normal'` | `'sparse'` \| `'normal'` \| `'dense'` \| `'lush'` |
+| `categories` | `string[]` | all | Filter to specific plant categories |
 | `colors.accent` | `string` | `'#F6821F'` | Primary accent color |
 | `colors.palette` | `string` | `'natural'` | Color palette preset |
 | `colors.accentWeight` | `number` | `0.4` | Fraction of plants using accent color (0-1) |
@@ -171,6 +173,24 @@ events: {
   onGenerationComplete: (generation: number, total: number) => void,
   onComplete: () => void,
 }
+```
+
+### Cleanup (Important for SPAs)
+
+Always call `destroy()` when removing the garden from the DOM to prevent memory leaks:
+
+```typescript
+// React
+useEffect(() => {
+  const garden = new Garten({ container: containerRef.current });
+  return () => garden.destroy();
+}, []);
+
+// Vue
+onUnmounted(() => garden.destroy());
+
+// Vanilla JS (page navigation)
+window.addEventListener('beforeunload', () => garden.destroy());
 ```
 
 ## Timing Curves

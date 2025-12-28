@@ -58,10 +58,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AdeOshineye/garten.git"
+    "url": "git+https://github.com/adewale/garten.git"
   },
-  "homepage": "https://github.com/AdeOshineye/garten#readme",
+  "homepage": "https://github.com/adewale/garten#readme",
   "bugs": {
-    "url": "https://github.com/AdeOshineye/garten/issues"
+    "url": "https://github.com/adewale/garten/issues"
   }
 }
