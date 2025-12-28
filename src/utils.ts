@@ -22,13 +22,16 @@ export function clamp(value: number, min: number, max: number): number {
  */
 export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result
-    ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16),
-      }
-    : null;
+  if (!result) return null;
+
+  const r = parseInt(result[1], 16);
+  const g = parseInt(result[2], 16);
+  const b = parseInt(result[3], 16);
+
+  // Guard against NaN (shouldn't happen with valid regex match, but defensive)
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
+
+  return { r, g, b };
 }
 
 /**
@@ -112,7 +115,8 @@ export function debounce<T extends (...args: unknown[]) => void>(
  */
 export function getTimingExponent(curve: TimingCurve): number {
   if (typeof curve === 'number') {
-    return Math.max(0.1, curve); // Clamp to prevent division issues
+    // Clamp to prevent division issues (too small) and numerical instability (too large)
+    return Math.max(0.1, Math.min(10, curve));
   }
   switch (curve) {
     case 'ease-out': return 2.0;
@@ -132,6 +136,9 @@ export function applyTimingCurve(
   totalGenerations: number,
   curve: TimingCurve
 ): number {
+  // Guard against division by zero
+  if (totalGenerations <= 0) return 0;
+
   const normalizedGen = generation / totalGenerations;
 
   if (curve === 'linear' || curve === 1) {

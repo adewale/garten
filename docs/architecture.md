@@ -92,7 +92,7 @@ Each plant is represented by a plain object with all properties set at generatio
 interface PlantData {
   // Identity
   id: number;              // Unique identifier
-  type: PlantType;         // One of 101 plant types
+  type: PlantType;         // One of 147 plant types
   generation: number;      // Which wave (0 to N-1)
 
   // Position
@@ -121,10 +121,10 @@ interface PlantData {
 
 ### Plant Type Hierarchy
 
-101 plant types are organized into 13 categories:
+147 plant types are organized into 19 categories:
 
 ```
-PlantCategory (13)              PlantType (101)
+PlantCategory (19)              PlantType (147)
 ─────────────────               ───────────────
 SimpleFlower ──────────────────▶ SimpleFlower, SimpleFlowerSmall, ...Large, ...Tall (10)
 Tulip ─────────────────────────▶ Tulip, TulipTall, TulipDouble, TulipParrot, ... (10)
@@ -139,6 +139,12 @@ Orchid ────────────────────────�
 Succulent ─────────────────────▶ Succulent, SucculentRosette, SucculentSpiky, ... (5)
 Herb ──────────────────────────▶ Lavender, LavenderTall, Sage, Thyme, Rosemary (5)
 Specialty ─────────────────────▶ Poppy, Sunflower, Iris, Peony, Hydrangea, Dahlia (6)
+TallFlower ────────────────────▶ Hollyhock, Delphinium, Foxglove, Lupine, ... (8)
+GiantGrass ────────────────────▶ Bamboo, Miscanthus, Cortaderia, ... (6)
+Climber ───────────────────────▶ Wisteria, Clematis, MorningGlory, ... (6)
+SmallTree ─────────────────────▶ Birch, Willow, CherryBlossom, Maple, ... (8)
+Tropical ──────────────────────▶ Palm, Banana, Hibiscus, Plumeria, ... (8)
+Conifer ───────────────────────▶ Pine, Cypress, Juniper, Cedar, ... (6)
 ```
 
 Categories enable:
@@ -148,7 +154,7 @@ Categories enable:
 
 ### PlantVariation (Parametric Differences)
 
-Instead of 101 separate render functions, variations modify shared renderers:
+Instead of 147 separate render functions, variations modify shared renderers:
 
 ```typescript
 interface PlantVariation {

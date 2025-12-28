@@ -198,6 +198,8 @@ export class Garten implements GardenController {
 
   /**
    * Jump to specific time in seconds
+   * @param time - Time in seconds to seek to (clamped to [0, duration])
+   * @remarks Values outside the valid range are silently clamped
    */
   seek(time: number): void {
     const clampedTime = Math.max(0, Math.min(time, this.options.duration));
@@ -210,8 +212,10 @@ export class Garten implements GardenController {
 
     this.elapsedTime = clampedTime;
 
-    // Update generation tracking
-    const currentGen = Math.floor(clampedTime / (this.options.duration / this.options.generations));
+    // Update generation tracking (guard against division by zero)
+    const currentGen = this.options.generations > 0
+      ? Math.floor(clampedTime / (this.options.duration / this.options.generations))
+      : 0;
     this.lastReportedGeneration = currentGen - 1;
 
     // Render at new position
@@ -231,6 +235,8 @@ export class Garten implements GardenController {
 
   /**
    * Set playback speed multiplier
+   * @param speed - Speed multiplier (must be > 0)
+   * @throws {Error} If speed is not positive
    */
   setSpeed(speed: number): void {
     if (speed <= 0) {

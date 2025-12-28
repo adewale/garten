@@ -185,6 +185,73 @@ Control how generations are paced:
 | `'ease-in-out'` | Slow start and end, fast middle |
 | `2.5` | Custom exponent (>1 = ease-out, <1 = ease-in) |
 
+## Presets
+
+Pre-configured garden setups for common use cases:
+
+```typescript
+import { applyPreset, Garten } from 'garten';
+
+const garden = new Garten({
+  container: '#garden',
+  ...applyPreset('forest'),
+});
+```
+
+| Preset | Description |
+|--------|-------------|
+| `default` | Balanced garden with moderate density |
+| `demo` | Fast 30-second animation for demos |
+| `subtle` | Sparse, semi-transparent website background |
+| `lush` | Dense, vibrant garden with max coverage |
+| `forest` | Tall plants: trees, climbers, giant grasses |
+| `meadow` | Low wildflower meadow with grasses |
+| `roseGarden` | Elegant rose-focused garden |
+| `tropical` | Palms and exotic flowers |
+| `herbs` | Fragrant herb garden |
+| `succulent` | Low-maintenance succulents |
+| `ambient` | 1-hour looping background animation |
+| `performance` | Optimized for lower-end devices |
+
+## Themes
+
+Visual styling presets that control colors:
+
+```typescript
+import { applyTheme, Garten } from 'garten';
+
+const garden = new Garten({
+  container: '#garden',
+  ...applyTheme('sakura'),
+});
+```
+
+| Theme | Description |
+|-------|-------------|
+| `natural` | Balanced, realistic colors (default) |
+| `sunset` | Warm oranges, reds, yellows |
+| `ocean` | Cool blues and greens |
+| `grayscale` | Elegant black and white |
+| `vibrant` | High-saturation colors |
+| `sakura` | Cherry blossom pinks |
+| `lavender` | Purple lavender field |
+| `autumn` | Warm earth tones |
+| `midnight` | Deep, cool night colors |
+| `tropical` | Bright tropical colors |
+| `zen` | Minimalist, muted tones |
+
+### Combining Presets and Themes
+
+```typescript
+import { createConfig, Garten } from 'garten';
+
+// Forest preset with autumn theme
+const garden = new Garten({
+  container: '#garden',
+  ...createConfig('forest', 'autumn'),
+});
+```
+
 ## CSS Setup
 
 The canvas is positioned absolutely. Your container needs positioning:
@@ -219,6 +286,7 @@ For a full-page background:
 ## TypeScript
 
 ```typescript
+// Core types
 import type {
   GardenOptions,
   GardenController,
@@ -230,7 +298,54 @@ import type {
   TimingCurve,
 } from 'garten';
 
-import { PlantType } from 'garten';
+// Preset and theme types
+import type { GardenPreset, GardenTheme } from 'garten';
+
+// Enums
+import { PlantType, PlantCategory } from 'garten';
+
+// Helper functions
+import {
+  applyPreset,
+  applyTheme,
+  createConfig,
+  getPresetNames,
+  getThemeNames,
+  createPreset,
+  createTheme,
+} from 'garten';
+
+// Constants
+import { PLANT_CATEGORIES } from 'garten';
+```
+
+### Helper Functions
+
+| Function | Description |
+|----------|-------------|
+| `applyPreset(name, options?)` | Apply a preset to options |
+| `applyTheme(name, options?)` | Apply a theme to options |
+| `createConfig(preset, theme, options?)` | Combine preset + theme |
+| `getPresetNames()` | List available preset names |
+| `getThemeNames()` | List available theme names |
+| `createPreset(name, options, description?)` | Create custom preset |
+| `createTheme(name, config)` | Create custom theme |
+
+### Category Filtering
+
+```typescript
+import { PLANT_CATEGORIES } from 'garten';
+
+// Filter to specific plant categories
+const garden = new Garten({
+  container: '#garden',
+  categories: ['rose', 'tulip', 'daisy'], // string names
+});
+
+// Available categories (19 total):
+// 'simple-flower', 'tulip', 'daisy', 'wildflower', 'grass', 'fern',
+// 'bush', 'rose', 'lily', 'orchid', 'succulent', 'herb', 'specialty',
+// 'tall-flower', 'giant-grass', 'climber', 'small-tree', 'tropical', 'conifer'
 ```
 
 ## Browser Support

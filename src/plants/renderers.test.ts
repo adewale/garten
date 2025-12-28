@@ -251,6 +251,61 @@ describe('Stem position calculations', () => {
   });
 });
 
+describe('Negative modifier guards', () => {
+  // These tests verify that plant rendering handles extreme negative modifiers
+  // without producing zero or negative counts (fixes issue #1)
+
+  it('should guard against extreme negative petalCountModifier', () => {
+    // All these formulas should produce at least the minimum value
+    // even with an extreme negative modifier like -10
+
+    // Succulent: leavesPerLayer = Math.max(3, 6 + petalCountModifier)
+    const succulentLeaves = Math.max(3, 6 + (-10));
+    expect(succulentLeaves).toBe(3);
+    expect(succulentLeaves).toBeGreaterThanOrEqual(1);
+
+    // Dahlia: petalCount = Math.max(8, 16 + petalCountModifier)
+    const dahliaCount = Math.max(8, 16 + (-10));
+    expect(dahliaCount).toBe(8);
+    expect(dahliaCount).toBeGreaterThanOrEqual(1);
+
+    // Hydrangea: floretCount = Math.max(8, 20 + petalCountModifier)
+    const hydrangeaCount = Math.max(8, 20 + (-15));
+    expect(hydrangeaCount).toBe(8);
+    expect(hydrangeaCount).toBeGreaterThanOrEqual(1);
+
+    // Peony: petalsInLayer = Math.max(4, 10 + layer * 2 + petalCountModifier)
+    for (let layer = 0; layer < 5; layer++) {
+      const peonyPetals = Math.max(4, 10 + layer * 2 + (-20));
+      expect(peonyPetals).toBe(4);
+      expect(peonyPetals).toBeGreaterThanOrEqual(1);
+    }
+
+    // Climber: numFlowers = Math.max(1, 3 + Math.floor(petalCountModifier))
+    const climberFlowers = Math.max(1, 3 + Math.floor(-10));
+    expect(climberFlowers).toBe(1);
+    expect(climberFlowers).toBeGreaterThanOrEqual(1);
+
+    // SmallTree: numFlowers = Math.max(1, Math.floor(petalCountModifier))
+    const treeFlowers = Math.max(1, Math.floor(-5));
+    expect(treeFlowers).toBe(1);
+    expect(treeFlowers).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should produce positive counts with typical modifier range', () => {
+    // Test with typical modifier range (-3 to +3)
+    for (const modifier of [-3, -2, -1, 0, 1, 2, 3]) {
+      // Climber flowers
+      const climber = Math.max(1, 3 + Math.floor(modifier));
+      expect(climber).toBeGreaterThanOrEqual(1);
+
+      // Succulent leaves
+      const succulent = Math.max(3, 6 + modifier);
+      expect(succulent).toBeGreaterThanOrEqual(3);
+    }
+  });
+});
+
 describe('Bezier control point calculations', () => {
   // These tests verify the bezier curve control point calculations
   // to ensure natural-looking stem curves

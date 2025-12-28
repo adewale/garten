@@ -255,7 +255,9 @@ export class GrowthProgressPool {
   private readonly maxHistorySize: number = DEFAULT_FRAME_HISTORY_SIZE;
 
   constructor(config: GrowthProgressPoolConfig = {}) {
-    this.initialSize = config.initialSize ?? DEFAULT_INITIAL_SIZE;
+    // Clamp config values to safe bounds
+    // Minimum of 1 for sizes (allow small values for testing), max 1M for performance scenarios
+    this.initialSize = Math.max(1, Math.min(1000000, config.initialSize ?? DEFAULT_INITIAL_SIZE));
 
     // Default devMode: true in non-production environments
     let defaultDevMode = false;
@@ -265,11 +267,12 @@ export class GrowthProgressPool {
     this.devMode = config.devMode ?? defaultDevMode;
     this.strictMode = config.strictMode ?? this.devMode;
 
-    this.growthFactor = config.growthFactor ?? DEFAULT_GROWTH_FACTOR;
-    this.maxSizeWarning = config.maxSizeWarning ?? DEFAULT_MAX_SIZE_WARNING;
-    this.maxSize = config.maxSize ?? DEFAULT_MAX_SIZE;
-    this.shrinkThreshold = config.shrinkThreshold ?? DEFAULT_SHRINK_THRESHOLD;
-    this.lowUsageFramesBeforeShrink = config.lowUsageFramesBeforeShrink ?? DEFAULT_LOW_USAGE_FRAMES_BEFORE_SHRINK;
+    // Clamp growthFactor to prevent infinite loops (must be > 1) or excessive growth
+    this.growthFactor = Math.max(1.1, Math.min(4, config.growthFactor ?? DEFAULT_GROWTH_FACTOR));
+    this.maxSizeWarning = Math.max(1, Math.min(1000000, config.maxSizeWarning ?? DEFAULT_MAX_SIZE_WARNING));
+    this.maxSize = Math.max(1, Math.min(1000000, config.maxSize ?? DEFAULT_MAX_SIZE));
+    this.shrinkThreshold = Math.max(0.01, Math.min(0.99, config.shrinkThreshold ?? DEFAULT_SHRINK_THRESHOLD));
+    this.lowUsageFramesBeforeShrink = Math.max(1, Math.min(10000, config.lowUsageFramesBeforeShrink ?? DEFAULT_LOW_USAGE_FRAMES_BEFORE_SHRINK));
 
     // Pre-allocate pool
     this.pool = new Array(this.initialSize);
@@ -600,10 +603,7 @@ let defaultPool: GrowthProgressPool | null = null;
  * Get the default pool instance (lazily created)
  */
 export function getDefaultPool(): GrowthProgressPool {
-  if (!defaultPool) {
-    defaultPool = new GrowthProgressPool();
-  }
-  return defaultPool;
+  return (defaultPool ??= new GrowthProgressPool());
 }
 
 /**

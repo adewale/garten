@@ -1,6 +1,9 @@
 import type { GardenOptions, ResolvedOptions, ColorOptions, GardenEvents, Density } from './types';
 import { OPTION_BOUNDS, PLANTS_PER_GENERATION, COLORS, ANIMATION, LAYOUT } from './constants';
 
+// Type declaration for process (Node.js environment detection for dev warnings)
+declare const process: { env?: { NODE_ENV?: string } } | undefined;
+
 /**
  * Default color options
  */
@@ -76,12 +79,15 @@ function clampOption(value: number, key: string): number {
 export const plantsPerGeneration: Record<Density, readonly [number, number]> = PLANTS_PER_GENERATION;
 
 /**
- * Validate CSS selector format (basic validation for common selectors)
+ * Validate CSS selector format using browser's native validation
  */
 function isValidSelector(selector: string): boolean {
-  // Allow simple ID, class, or tag selectors, and common combinations
-  // This prevents unusual selectors while allowing flexibility
-  return /^[#.]?[\w-]+(\s*[>+~]?\s*[#.]?[\w-]+)*$/.test(selector);
+  try {
+    document.querySelector(selector);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -102,6 +108,13 @@ export function resolveOptions(options: GardenOptions): ResolvedOptions {
     container = el;
   } else {
     container = options.container;
+  }
+
+  // Warn if container is not connected to the DOM (may cause issues)
+  if (typeof process !== 'undefined' && process?.env?.NODE_ENV !== 'production') {
+    if (!container.isConnected) {
+      console.warn('Garten: Container is not connected to the DOM. Animation may not render.');
+    }
   }
 
   // Merge color options
@@ -130,7 +143,10 @@ export function resolveOptions(options: GardenOptions): ResolvedOptions {
     autoplay: options.autoplay ?? defaultOptions.autoplay,
     respectReducedMotion: options.respectReducedMotion ?? defaultOptions.respectReducedMotion,
     seed: clampOption(
-      Number.isFinite(options.seed) ? options.seed! : Math.random() * 100000,
+      // Use provided seed if valid, otherwise generate random seed
+      (typeof options.seed === 'number' && Number.isFinite(options.seed))
+        ? options.seed
+        : Math.random() * 100000,
       'seed'
     ),
     maxPixelRatio: clampOption(options.maxPixelRatio ?? defaultOptions.maxPixelRatio, 'maxPixelRatio'),

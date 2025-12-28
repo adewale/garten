@@ -45,7 +45,10 @@ export class Renderer {
     // Get context
     const ctx = this.canvas.getContext('2d');
     if (!ctx) {
-      throw new Error('Garten: Could not get 2D context');
+      throw new Error(
+        'Garten: Could not create 2D canvas context. ' +
+        'Check that browser supports the Canvas API.'
+      );
     }
     this.ctx = ctx;
 
@@ -93,10 +96,15 @@ export class Renderer {
    */
   resize(): void {
     this.dpr = getPixelRatio(this.options.maxPixelRatio);
-    
+
     const rect = this.container.getBoundingClientRect();
     this.width = rect.width;
     this.height = rect.height;
+
+    // Guard against zero dimensions (container hidden or detached)
+    if (this.width <= 0 || this.height <= 0) {
+      return;
+    }
 
     this.canvas.width = this.width * this.dpr;
     this.canvas.height = this.height * this.dpr;
@@ -232,6 +240,9 @@ export class Renderer {
       window.removeEventListener('resize', this.resizeHandler);
       this.resizeHandler = null;
     }
+
+    // Reset object pool to free memory
+    this.pool.reset();
 
     // Remove canvas from DOM
     if (this.canvas.parentNode) {

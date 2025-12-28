@@ -331,11 +331,11 @@ export function applyTheme(
   theme: string | GardenTheme,
   options: Partial<GardenOptions> = {}
 ): Partial<GardenOptions> {
-  const themeConfig = typeof theme === 'string' ? themes[theme] : theme;
+  let themeConfig = typeof theme === 'string' ? themes[theme] : theme;
 
   if (!themeConfig) {
     console.warn(`Theme "${theme}" not found, using natural`);
-    return options;
+    themeConfig = themes.natural;
   }
 
   const colors: ColorOptions = {
@@ -366,7 +366,8 @@ export function applyPreset(
 
   if (!presetConfig) {
     console.warn(`Preset "${preset}" not found, using default`);
-    return options;
+    // Apply the default preset instead of returning unchanged options
+    return applyPreset('default', options);
   }
 
   // Deep merge colors to preserve sub-properties

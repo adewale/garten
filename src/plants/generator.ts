@@ -5,6 +5,9 @@ import { buildFlowerColors, buildFoliageColors } from '../palettes';
 import { plantsPerGeneration } from '../defaults';
 import { getPlantVariation } from './variations';
 
+// Type declaration for process (Node.js environment detection)
+declare const process: { env?: { NODE_ENV?: string } } | undefined;
+
 /**
  * Category name strings for public API
  * Maps user-friendly names to internal PlantCategory enum
@@ -49,6 +52,9 @@ function parseCategoryFilter(categories: string[] | null): Set<PlantCategory> | 
     const category = categoryNameToEnum[name.toLowerCase()];
     if (category !== undefined) {
       result.add(category);
+    } else if (typeof process !== 'undefined' && process?.env?.NODE_ENV !== 'production') {
+      const validCategories = Object.keys(categoryNameToEnum).join(', ');
+      console.warn(`Garten: Unknown category "${name}". Valid categories: ${validCategories}`);
     }
   }
 
@@ -308,9 +314,16 @@ const categoryHeightRanges: Record<PlantCategory, [number, number]> = {
  * Built once at module load time
  */
 const plantTypeToCategory: Map<PlantType, PlantCategory> = new Map();
-for (const [category, types] of Object.entries(plantTypesByCategory)) {
-  for (const type of types) {
-    plantTypeToCategory.set(type, Number(category) as PlantCategory);
+// Use typed iteration over enum values instead of Object.entries + Number() conversion
+// This is safer as it doesn't rely on string-to-number coercion
+for (const category of Object.values(PlantCategory).filter(
+  (v): v is PlantCategory => typeof v === 'number'
+)) {
+  const types = plantTypesByCategory[category];
+  if (types) {
+    for (const type of types) {
+      plantTypeToCategory.set(type, category);
+    }
   }
 }
 
@@ -328,36 +341,48 @@ const tallCategories = new Set([
 
 
 /**
- * Select a random category based on weights, filtered by maxHeight and user selection
- * Categories whose minimum height exceeds maxHeight are excluded
- * Tall categories get boosted weights when maxHeight is high
+ * Pre-computed category data for efficient selection
  */
-function selectCategory(
-  rand: () => number,
+interface PrecomputedCategories {
+  adjustedWeights: Array<{ category: PlantCategory; weight: number }>;
+  totalWeight: number;
+  fallback: PlantCategory;
+}
+
+/**
+ * Pre-compute available categories based on maxHeight and user selection
+ * This is called once at the start of plant generation for efficiency
+ */
+function precomputeCategories(
   maxHeight: number,
   categoryFilter: Set<PlantCategory> | null
-): PlantCategory {
+): PrecomputedCategories {
   // Filter categories to those compatible with maxHeight and user selection
   const availableCategories = categoryWeights.filter(({ category }) => {
-    // Check maxHeight compatibility
     const [minH] = categoryHeightRanges[category];
     if (minH > maxHeight) return false;
-
-    // Check user category filter
     if (categoryFilter && !categoryFilter.has(category)) return false;
-
     return true;
   });
 
   // Fallback if no categories available
   if (availableCategories.length === 0) {
-    return categoryFilter?.values().next().value ?? PlantCategory.SimpleFlower;
+    if (typeof process !== 'undefined' && process?.env?.NODE_ENV !== 'production') {
+      console.warn('Garten: No categories available for current maxHeight. Falling back to SimpleFlower.');
+    }
+    // Safe Set access: explicitly check size before accessing iterator
+    // The size check guarantees the iterator has a value, so the cast is safe
+    const fallback: PlantCategory = (categoryFilter && categoryFilter.size > 0)
+      ? (categoryFilter.values().next().value as PlantCategory)
+      : PlantCategory.SimpleFlower;
+    return {
+      adjustedWeights: [{ category: fallback, weight: 1 }],
+      totalWeight: 1,
+      fallback,
+    };
   }
 
   // Calculate boost factor for tall plants based on maxHeight
-  // At maxHeight 0.35 (default): no boost (1x)
-  // At maxHeight 0.7: moderate boost (2x)
-  // At maxHeight 1.0: strong boost (4x)
   const tallBoostFactor = 1 + Math.max(0, (maxHeight - 0.35) / 0.65) * 3;
 
   // Apply boost to tall categories and calculate total weight
@@ -367,6 +392,22 @@ function selectCategory(
     totalWeight += adjustedWeight;
     return { category, weight: adjustedWeight };
   });
+
+  return {
+    adjustedWeights,
+    totalWeight,
+    fallback: availableCategories[0].category,
+  };
+}
+
+/**
+ * Select a random category using pre-computed weights
+ */
+function selectCategory(
+  rand: () => number,
+  precomputed: PrecomputedCategories
+): PlantCategory {
+  const { adjustedWeights, totalWeight, fallback } = precomputed;
 
   const roll = rand() * totalWeight;
   let cumulative = 0;
@@ -378,7 +419,7 @@ function selectCategory(
     }
   }
 
-  return availableCategories[0].category;
+  return fallback;
 }
 
 /**
@@ -386,11 +427,14 @@ function selectCategory(
  */
 function selectPlantType(
   rand: () => number,
-  maxHeight: number,
-  categoryFilter: Set<PlantCategory> | null
+  precomputed: PrecomputedCategories
 ): PlantType {
-  const category = selectCategory(rand, maxHeight, categoryFilter);
+  const category = selectCategory(rand, precomputed);
   const types = plantTypesByCategory[category];
+  // Guard against empty or missing type arrays
+  if (!types || types.length === 0) {
+    return PlantType.SimpleFlower;
+  }
   return types[Math.floor(rand() * types.length)];
 }
 
@@ -436,9 +480,20 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
   // Parse category filter
   const categoryFilter = parseCategoryFilter(categories);
 
+  // Pre-compute available categories once for efficiency (avoids filtering on every plant)
+  const precomputedCategories = precomputeCategories(maxHeight, categoryFilter);
+
   // Build color arrays once
   const flowerColors = buildFlowerColors(colors as Required<ColorOptions>);
   const foliageColors = buildFoliageColors(colors as Required<ColorOptions>);
+
+  // Validate color arrays are non-empty
+  if (flowerColors.length === 0) {
+    throw new Error('Garten: No flower colors available. Check palette configuration.');
+  }
+  if (foliageColors.leaves.length === 0 || foliageColors.stems.length === 0) {
+    throw new Error('Garten: No foliage colors available. Check palette configuration.');
+  }
 
   // Estimate total plants for pre-allocation (reduces memory fragmentation)
   const avgPlantsPerGen = (minPlantsPerGen + maxPlantsPerGen) / 2;
@@ -464,8 +519,8 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
     for (let p = 0; p < plantsInGen; p++) {
       const plantRand = createRandom(seed + gen * 1000 + p * 100);
 
-      // Select plant type (filtered by maxHeight and categories)
-      const type = selectPlantType(plantRand, maxHeight, categoryFilter);
+      // Select plant type using pre-computed category weights
+      const type = selectPlantType(plantRand, precomputedCategories);
 
       // Position
       const x = plantRand();
@@ -480,15 +535,19 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
       const stemColorIdx = Math.floor(plantRand() * foliageColors.stems.length);
 
       // Timing - use warped generation duration for proper pacing
-      const delay = genDelay + plantRand() * genDuration * 0.5;
+      // Ensure delay never exceeds duration - minGrowDuration so plants have time to grow
+      const minGrowDuration = Math.max(0.1, duration * 0.01); // At least 100ms or 1% of duration
+      const rawDelay = genDelay + plantRand() * genDuration * 0.5;
+      const delay = Math.min(rawDelay, duration - minGrowDuration);
       const rawGrowDuration = genDuration * randomRange(0.6, 1.0, plantRand);
-      // Ensure plant finishes within animation duration, with minimum to prevent division by zero
-      const growDuration = Math.max(0.001, Math.min(rawGrowDuration, duration - delay));
+      // Ensure plant finishes within animation duration, with minimum to prevent visual artifacts
+      const growDuration = Math.max(minGrowDuration, Math.min(rawGrowDuration, duration - delay));
 
       // Visual properties
       const petals = 5 + Math.floor(plantRand() * 4);
       const lean = (plantRand() - 0.5) * 0.3;
-      const scale = randomRange(0.7, 1.2, plantRand);
+      // Ensure scale is always positive to prevent rendering issues
+      const scale = Math.max(0.1, randomRange(0.7, 1.2, plantRand));
 
       // Cache category and variation for O(1) lookup during rendering
       const category = plantTypeToCategory.get(type) ?? PlantCategory.SimpleFlower;

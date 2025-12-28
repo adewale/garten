@@ -574,7 +574,7 @@ function drawSucculent(
   if (growth <= 0) return;
   const s = size * growth * variation.sizeMultiplier;
   const layers = variation.complexity > 0.6 ? 4 : 3;
-  const leavesPerLayer = 6 + variation.petalCountModifier;
+  const leavesPerLayer = Math.max(3, 6 + variation.petalCountModifier);
 
   // Draw rosette pattern
   for (let layer = 0; layer < layers; layer++) {
@@ -692,7 +692,7 @@ function drawSunflower(
 ): void {
   if (growth <= 0) return;
   const s = size * growth * variation.sizeMultiplier;
-  const petalCount = 16 + variation.petalCountModifier;
+  const petalCount = Math.max(8, 16 + variation.petalCountModifier);
 
   // Ray petals
   for (let i = 0; i < petalCount; i++) {
@@ -829,7 +829,7 @@ function drawHydrangea(
 ): void {
   if (growth <= 0) return;
   const s = size * growth * variation.sizeMultiplier;
-  const floretCount = 20 + variation.petalCountModifier;
+  const floretCount = Math.max(8, 20 + variation.petalCountModifier);
 
   // Cluster of small 4-petal florets
   for (let i = 0; i < floretCount; i++) {
@@ -878,7 +878,7 @@ function drawDahlia(
   // Many layers of pointed petals
   for (let layer = 0; layer < layers; layer++) {
     const layerSize = s * (1 - layer * 0.18);
-    const petalsInLayer = 10 + layer * 2 + variation.petalCountModifier;
+    const petalsInLayer = Math.max(4, 10 + layer * 2 + variation.petalCountModifier);
     const angleOffset = layer * 0.25;
 
     for (let i = 0; i < petalsInLayer; i++) {
@@ -1377,7 +1377,7 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     // Draw flowers for flowering vines
     if (stemGrowth > 0.6 && variation.complexity > 0.6) {
       const flowerGrowth = (stemGrowth - 0.6) * 2.5;
-      const numFlowers = 3 + Math.floor(variation.petalCountModifier);
+      const numFlowers = Math.max(1, 3 + Math.floor(variation.petalCountModifier));
       for (let f = 0; f < numFlowers; f++) {
         const t = 0.3 + rand() * 0.5;
         const fy = baseY - plantHeight * t * stemGrowth;
@@ -1436,7 +1436,7 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
 
       // Draw flowers for ornamental/cherry blossom
       if (variation.petalCountModifier > 4 && foliageGrowth > 0.5) {
-        const numFlowers = Math.floor(variation.petalCountModifier);
+        const numFlowers = Math.max(1, Math.floor(variation.petalCountModifier));
         for (let f = 0; f < numFlowers; f++) {
           const angle = rand() * Math.PI * 2;
           const dist = foliageRadius * (0.5 + rand() * 0.5);
@@ -1561,7 +1561,13 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
  * Main plant rendering function
  * Uses category-based dispatch for O(1) lookup
  * Optimized to use cached category/variation when available
- * Accepts optional pool for growth phase calculations
+ *
+ * @param ctx - Canvas 2D rendering context
+ * @param plant - Plant data containing position, colors, timing
+ * @param width - Canvas width in pixels
+ * @param height - Canvas height in pixels
+ * @param time - Current animation time in seconds
+ * @param pool - Optional object pool for growth phase calculations (uses allocation if not provided)
  */
 export function drawPlant(
   ctx: Ctx,
@@ -1575,5 +1581,12 @@ export function drawPlant(
   const category = plant.category ?? getPlantCategory(plant.type);
   const variation = plant.variation ?? getPlantVariation(plant.type);
   const renderer = categoryRenderers[category];
+
+  // Guard against undefined renderer (invalid category)
+  if (!renderer) {
+    console.warn(`Garten: No renderer for category ${category}`);
+    return;
+  }
+
   renderer(ctx, plant, width, height, time, variation, pool);
 }

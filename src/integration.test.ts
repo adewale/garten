@@ -1057,7 +1057,9 @@ describe('Constraint: Plant timing edge cases', () => {
 
     for (const plant of plants) {
       expect(plant.growDuration).toBeGreaterThan(0);
-      expect(plant.growDuration).toBeGreaterThanOrEqual(0.001);
+      // Minimum grow duration is max(0.1, duration * 0.01)
+      const minGrow = Math.max(0.1, resolved.duration * 0.01);
+      expect(plant.growDuration).toBeGreaterThanOrEqual(minGrow);
     }
   });
 
@@ -1387,5 +1389,91 @@ describe('Constraint: Environment utility methods', () => {
   it('prefersDarkMode should return boolean', () => {
     const dark = Environment.prefersDarkMode();
     expect(typeof dark).toBe('boolean');
+  });
+});
+
+describe('Constraint: Category validation warnings', () => {
+  it('should warn on invalid category name in dev mode', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      // parseCategoryFilter is called within generatePlants, not resolveOptions
+      const resolved = resolveOptions({
+        container: document.createElement('div'),
+        categories: ['invalid-category-name', 'rose'],
+      });
+
+      // Call generatePlants which triggers the validation
+      generatePlants(resolved);
+
+      // Should have warned about the invalid category
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Unknown category')
+      );
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('invalid-category-name')
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('should accept valid category names without warning', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const resolved = resolveOptions({
+        container: document.createElement('div'),
+        categories: ['rose', 'tulip', 'daisy', 'grass'],
+      });
+
+      // Call generatePlants which triggers the validation
+      generatePlants(resolved);
+
+      // Should not have warned for valid categories
+      const categoryWarnings = warnSpy.mock.calls.filter(
+        (call) => call[0]?.includes?.('Unknown category')
+      );
+      expect(categoryWarnings.length).toBe(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+describe('Constraint: Growth duration minimum enforcement', () => {
+  it('should enforce minimum grow duration even with extreme timing curves', () => {
+    const resolved = resolveOptions({
+      container: document.createElement('div'),
+      generations: 100,
+      duration: 10,
+      timingCurve: 3, // Extreme ease-out
+    });
+
+    const plants = generatePlants(resolved);
+    const minGrow = Math.max(0.1, resolved.duration * 0.01);
+
+    for (const plant of plants) {
+      expect(plant.growDuration).toBeGreaterThanOrEqual(minGrow);
+    }
+  });
+
+  it('should have all plants visible before animation ends', () => {
+    const resolved = resolveOptions({
+      container: document.createElement('div'),
+      generations: 50,
+      duration: 60,
+      timingCurve: 'ease-out',
+    });
+
+    const plants = generatePlants(resolved);
+
+    for (const plant of plants) {
+      // Every plant should start and finish within the duration
+      expect(plant.delay).toBeLessThan(resolved.duration);
+      expect(plant.delay + plant.growDuration).toBeLessThanOrEqual(
+        resolved.duration + 0.01 // Small tolerance for floating point
+      );
+    }
   });
 });
