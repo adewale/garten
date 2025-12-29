@@ -410,6 +410,7 @@
 
       <label>
         Accent:
+        <input type="text" id="accentColorText" value="#F6821F" maxlength="7" style="width: 70px; padding: 8px; border: 2px solid #ddd; border-radius: 6px; font-family: monospace;">
         <input type="color" id="accentColor" value="#F6821F">
       </label>
 
@@ -746,6 +747,7 @@
 
       if (scene.config.colors?.accent) {
         document.getElementById('accentColor').value = scene.config.colors.accent;
+        document.getElementById('accentColorText').value = scene.config.colors.accent.toUpperCase();
       }
 
       if (scene.config.colors?.palette) {
@@ -950,10 +952,28 @@
       updateSeekTimeDisplay(currentTime, currentConfig.duration);
     };
 
-    document.getElementById('accentColor').onchange = (e) => {
-      currentConfig.colors.accent = e.target.value;
-      garden.setOptions({ colors: { accent: e.target.value } });
+    // Sync accent color between text input and color picker
+    function setAccentColor(hex) {
+      if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return false;
+      currentConfig.colors.accent = hex;
+      document.getElementById('accentColor').value = hex;
+      document.getElementById('accentColorText').value = hex.toUpperCase();
+      garden.setOptions({ colors: { accent: hex } });
       updateConfigDisplay();
+      return true;
+    }
+
+    document.getElementById('accentColor').onchange = (e) => {
+      setAccentColor(e.target.value);
+    };
+
+    document.getElementById('accentColorText').onchange = (e) => {
+      let hex = e.target.value.trim();
+      if (!hex.startsWith('#')) hex = '#' + hex;
+      if (!setAccentColor(hex)) {
+        // Invalid - revert to current
+        e.target.value = currentConfig.colors.accent;
+      }
     };
 
     document.getElementById('paletteSelect').onchange = (e) => {
