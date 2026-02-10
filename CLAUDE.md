@@ -31,7 +31,27 @@ This is a TypeScript canvas animation library that renders an animated garden wi
 
 - **`src/palettes.ts`** - Color palette definitions (natural, warm, cool, grayscale, vibrant, monotone) for flowers and foliage. For color manipulation, see `Color.ts`.
 
-- **`src/utils.ts`** - Seeded random number generator and utility functions like `prefersReducedMotion()`.
+- **`src/utils.ts`** - Utility functions and re-exports from `SeededRandom.ts` (`createRandom`, `seededRandom`).
+
+- **`src/Color.ts`** - Color manipulation value object (`fromHex`, `lighten`, `darken`, `mix`, etc.).
+
+- **`src/Vec2.ts`** - 2D vector value object for spatial calculations.
+
+- **`src/GrowthProgress.ts`** - Growth phase calculation value object (stem, leaf, flower progress).
+
+- **`src/GrowthProgressPool.ts`** - Object pool for zero-allocation growth calculations during rendering.
+
+- **`src/SeededRandom.ts`** - Seeded pseudo-random number generator for deterministic plant generation.
+
+- **`src/CanvasHelper.ts`** - Fluent API for canvas drawing operations (stems, leaves).
+
+- **`src/EventEmitter.ts`** - Type-safe event emitter for garden lifecycle events.
+
+- **`src/Environment.ts`** - Browser capability detection (`prefersReducedMotion`, `getPixelRatio`, etc.).
+
+- **`src/constants.ts`** - Centralized constants and magic numbers (timing, sizing, variation defaults).
+
+- **`src/plants/variations.ts`** - Plant variation parameter definitions. Sparse `variationOverrides` map merged with defaults.
 
 ### Animation Flow
 
@@ -63,7 +83,7 @@ The `timingCurve` option controls how time is distributed across generations. Im
 
 ### Performance Optimizations
 
-- Category-based rendering with O(1) lookup via `categoryRenderers` Record
-- `plantVariations` Map built at module load for instant variation lookup
+- Category-based rendering with O(1) lookup via local `categoryRenderers` Record in `src/plants/renderers.ts`
+- `variationOverrides` Map (in `src/plants/variations.ts`) built at module load for instant variation lookup
 - Pre-allocated arrays in `generatePlants()` to reduce memory fragmentation
 - `plantTypeToCategory` Map for O(1) type-to-category resolution

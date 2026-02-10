@@ -61,8 +61,6 @@ export {
   getPresetNames,
   createTheme,
   createPreset,
-  densityPreset,
-  speedPreset,
 } from './presets';
 
 // Constants (for advanced customization)

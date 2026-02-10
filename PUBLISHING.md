@@ -10,7 +10,7 @@ git init
 git add .
 git commit -m "Initial commit: Garten v1.0.0
 
-Animated canvas garden library with 101 plant types.
+Animated canvas garden library with 147 plant types.
 Zero dependencies, TypeScript, ESM/CJS/IIFE builds."
 
 # Create GitHub repo (using gh CLI)

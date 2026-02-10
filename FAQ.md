@@ -114,7 +114,7 @@ new Garten({
   container: '#garden',
   colors: {
     accent: '#FF6B6B',      // Primary flower color
-    palette: 'warm',        // 'natural' | 'warm' | 'cool' | 'vibrant' | 'monochrome'
+    palette: 'warm',        // 'natural' | 'warm' | 'cool' | 'grayscale' | 'vibrant' | 'monotone'
     accentWeight: 0.5       // 50% of flowers use accent color
   }
 });
@@ -169,8 +169,8 @@ To regenerate a new garden programmatically at runtime:
 
 ```javascript
 garden.setOptions({ seed: Math.random() * 100000 });
-// Or simply:
-garden.regenerate();  // Uses a new random seed internally
+// Or to regenerate with current options (same seed = same garden):
+garden.regenerate();  // Regenerates plants with current options
 ```
 
 ### What does `timingCurve` do?
@@ -266,8 +266,9 @@ new Garten({
 Seek to the end:
 
 ```javascript
-const garden = new Garten({ container: '#garden', autoplay: false });
-garden.seek(garden.options.duration);  // Jump to end
+const duration = 600;  // Match the duration passed to constructor
+const garden = new Garten({ container: '#garden', autoplay: false, duration });
+garden.seek(duration);  // Jump to end
 ```
 
 Or use reduced motion mode (shows static completed garden):
@@ -377,7 +378,7 @@ Your selector doesn't match any element. Check:
 - The selector is correct (`#id`, `.class`, or element)
 - The script runs after the DOM is ready
 
-### "Garten: Could not get 2D context"
+### "Garten: Could not create 2D canvas context"
 
 The browser couldn't create a Canvas 2D context. This is rare but can happen if:
 - Too many canvases exist

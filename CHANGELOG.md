@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-02-07
+
+### Fixed
+
+- Fix incorrect palette name `'monochrome'` to `'monotone'` in FAQ examples
+- Fix FAQ code example accessing private `garden.options.duration` field
+- Fix misleading FAQ comment claiming `regenerate()` uses a new random seed
+- Fix FAQ error message text to match actual error in Renderer.ts
+- Add missing `'grayscale'` palette to FAQ palette list
+
+### Changed
+
+- Remove undocumented `densityPreset` and `speedPreset` from public exports
+- Remove unused `CategoryRenderers` type from public API
+- Simplify `PlantCategory` re-export chain (`plants/index.ts` now re-exports directly from `types.ts`)
+- Update CLAUDE.md with descriptions for all source files and fix inaccurate references
+
 ## [1.0.0] - 2024-12-29
 
 ### Added
@@ -34,4 +51,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Full TypeScript support with type exports
 - Zero dependencies
 
+[1.0.1]: https://github.com/adewale/garten/releases/tag/v1.0.1
 [1.0.0]: https://github.com/adewale/garten/releases/tag/v1.0.0

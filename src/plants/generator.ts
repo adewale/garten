@@ -619,5 +619,4 @@ export function getPlantCategory(type: PlantType): PlantCategory {
 }
 
 // Re-export for convenience
-export { PlantCategory } from '../types';
 export { getPlantVariation } from './variations';

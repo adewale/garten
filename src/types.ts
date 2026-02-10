@@ -594,11 +594,6 @@ export type PlantRenderer = (
   variation: PlantVariation
 ) => void;
 
-/**
- * Category-based renderer registry type
- */
-export type CategoryRenderers = Record<PlantCategory, PlantRenderer>;
-
 // ==================== EVENT EMITTER TYPES ====================
 
 /**
