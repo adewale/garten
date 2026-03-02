@@ -210,12 +210,15 @@ describe('Stem position calculations', () => {
     const baseY = 200;
     const height = 50;
 
-    const half = drawStem(ctx, 100, baseY, height, 2, '#4A7C40', 0, 0.5);
-    const full = drawStem(ctx, 100, baseY, height, 2, '#4A7C40', 0, 1);
+    // drawStem returns a shared object — capture values before next call
+    const halfResult = drawStem(ctx, 100, baseY, height, 2, '#4A7C40', 0, 0.5);
+    const halfY = halfResult!.y;
+    const fullResult = drawStem(ctx, 100, baseY, height, 2, '#4A7C40', 0, 1);
+    const fullY = fullResult!.y;
 
     // Height at 0.5 growth should be half of full height
-    const halfHeight = baseY - half!.y;
-    const fullHeight = baseY - full!.y;
+    const halfHeight = baseY - halfY;
+    const fullHeight = baseY - fullY;
 
     expect(halfHeight).toBeCloseTo(fullHeight * 0.5, 5);
   });
@@ -225,11 +228,14 @@ describe('Stem position calculations', () => {
     const baseY = 200;
     const height = 50;
 
-    const noLean = drawStem(ctx, 100, baseY, height, 2, '#4A7C40', 0, 1);
-    const withLean = drawStem(ctx, 100, baseY, height, 2, '#4A7C40', 0.3, 1);
+    // drawStem returns a shared object — capture values before next call
+    const noLeanResult = drawStem(ctx, 100, baseY, height, 2, '#4A7C40', 0, 1);
+    const noLeanY = noLeanResult!.y;
+    const withLeanResult = drawStem(ctx, 100, baseY, height, 2, '#4A7C40', 0.3, 1);
+    const withLeanY = withLeanResult!.y;
 
     // Both should have same Y position (same height)
-    expect(noLean!.y).toBe(withLean!.y);
+    expect(noLeanY).toBe(withLeanY);
   });
 
   it('negative lean should lean left', () => {

@@ -19,6 +19,17 @@ export class Renderer {
   private height: number = 0;
   private pool: GrowthProgressPool;
 
+  // Cached fade gradient state (avoid re-creating gradient + strings every frame)
+  private fadeGradientCache: {
+    fadeColor: string;
+    fadeHeight: number;
+    maxHeight: number;
+    width: number;
+    height: number;
+    gradient: CanvasGradient;
+    fadeStartY: number;
+  } | null = null;
+
   constructor(options: ResolvedOptions) {
     this.options = options;
     this.container = options.container;
@@ -138,20 +149,42 @@ export class Renderer {
     const { fadeHeight, fadeColor, maxHeight } = this.options;
     if (fadeHeight <= 0) return;
 
-    // Parse fade color to RGB
-    const rgb = hexToRgb(fadeColor);
-    if (!rgb) return;
+    // Reuse cached gradient if inputs haven't changed
+    const cache = this.fadeGradientCache;
+    if (
+      !cache ||
+      cache.fadeColor !== fadeColor ||
+      cache.fadeHeight !== fadeHeight ||
+      cache.maxHeight !== maxHeight ||
+      cache.width !== this.width ||
+      cache.height !== this.height
+    ) {
+      // Parse fade color to RGB
+      const rgb = hexToRgb(fadeColor);
+      if (!rgb) return;
 
-    // Calculate fade zone positions
-    // Plants grow from bottom, so fade starts at (1 - maxHeight) from top
-    const plantTopY = this.height * (1 - maxHeight);
-    const fadeStartY = plantTopY;
-    const fadeEndY = Math.max(0, plantTopY - this.height * fadeHeight);
+      // Calculate fade zone positions
+      const plantTopY = this.height * (1 - maxHeight);
+      const fadeStartY = plantTopY;
+      const fadeEndY = Math.max(0, plantTopY - this.height * fadeHeight);
 
-    // Create gradient from fade color (opaque) to transparent
-    const gradient = this.ctx.createLinearGradient(0, fadeEndY, 0, fadeStartY);
-    gradient.addColorStop(0, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 1)`);
-    gradient.addColorStop(1, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0)`);
+      // Create gradient from fade color (opaque) to transparent
+      const gradient = this.ctx.createLinearGradient(0, fadeEndY, 0, fadeStartY);
+      gradient.addColorStop(0, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 1)`);
+      gradient.addColorStop(1, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0)`);
+
+      this.fadeGradientCache = {
+        fadeColor,
+        fadeHeight,
+        maxHeight,
+        width: this.width,
+        height: this.height,
+        gradient,
+        fadeStartY,
+      };
+    }
+
+    const { gradient, fadeStartY } = this.fadeGradientCache!;
 
     // Apply fade using destination-out composite
     this.ctx.globalCompositeOperation = 'destination-out';
@@ -212,6 +245,9 @@ export class Renderer {
   setOptions(options: ResolvedOptions): void {
     this.options = options;
 
+    // Invalidate cached gradient when options change
+    this.fadeGradientCache = null;
+
     // Update canvas style if z-index or opacity changed
     this.canvas.style.zIndex = String(options.zIndex);
     this.canvas.style.opacity = String(options.opacity);
@@ -243,6 +279,9 @@ export class Renderer {
 
     // Reset object pool to free memory
     this.pool.reset();
+
+    // Release cached gradient
+    this.fadeGradientCache = null;
 
     // Remove canvas from DOM
     if (this.canvas.parentNode) {

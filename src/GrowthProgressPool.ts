@@ -250,8 +250,10 @@ export class GrowthProgressPool {
   private totalReleased: number = 0;
   private consecutiveLowUsageFrames: number = 0;
 
-  // Frame history for profiling
-  private frameHistory: FrameStats[] = [];
+  // Frame history ring buffer for profiling (avoids per-frame allocation and O(n) shift)
+  private frameHistory: FrameStats[];
+  private frameHistoryIndex: number = 0;
+  private frameHistoryCount: number = 0;
   private readonly maxHistorySize: number = DEFAULT_FRAME_HISTORY_SIZE;
 
   constructor(config: GrowthProgressPoolConfig = {}) {
@@ -273,6 +275,12 @@ export class GrowthProgressPool {
     this.maxSize = Math.max(1, Math.min(1000000, config.maxSize ?? DEFAULT_MAX_SIZE));
     this.shrinkThreshold = Math.max(0.01, Math.min(0.99, config.shrinkThreshold ?? DEFAULT_SHRINK_THRESHOLD));
     this.lowUsageFramesBeforeShrink = Math.max(1, Math.min(10000, config.lowUsageFramesBeforeShrink ?? DEFAULT_LOW_USAGE_FRAMES_BEFORE_SHRINK));
+
+    // Pre-allocate frame history ring buffer
+    this.frameHistory = new Array(this.maxHistorySize);
+    for (let i = 0; i < this.maxHistorySize; i++) {
+      this.frameHistory[i] = { frameNumber: 0, usage: 0, timestamp: 0 };
+    }
 
     // Pre-allocate pool
     this.pool = new Array(this.initialSize);
@@ -325,14 +333,14 @@ export class GrowthProgressPool {
     }
     this.totalReleased += frameUsage;
 
-    // Track frame history for profiling
-    this.frameHistory.push({
-      frameNumber: this.frameNumber,
-      usage: frameUsage,
-      timestamp: Date.now(),
-    });
-    if (this.frameHistory.length > this.maxHistorySize) {
-      this.frameHistory.shift();
+    // Track frame history using ring buffer (no allocation, no shift)
+    const slot = this.frameHistory[this.frameHistoryIndex % this.maxHistorySize];
+    slot.frameNumber = this.frameNumber;
+    slot.usage = frameUsage;
+    slot.timestamp = Date.now();
+    this.frameHistoryIndex++;
+    if (this.frameHistoryCount < this.maxHistorySize) {
+      this.frameHistoryCount++;
     }
 
     // Reset all acquired objects for next frame
@@ -488,10 +496,19 @@ export class GrowthProgressPool {
   }
 
   /**
-   * Get frame history for profiling (rolling window of recent frames)
+   * Get frame history for profiling (rolling window of recent frames, chronological order)
    */
   getFrameHistory(): readonly FrameStats[] {
-    return this.frameHistory;
+    if (this.frameHistoryCount < this.maxHistorySize) {
+      // Buffer not yet full — return filled portion
+      return this.frameHistory.slice(0, this.frameHistoryCount);
+    }
+    // Ring buffer is full — reorder to chronological
+    const start = this.frameHistoryIndex % this.maxHistorySize;
+    return [
+      ...this.frameHistory.slice(start),
+      ...this.frameHistory.slice(0, start),
+    ];
   }
 
   /**
@@ -577,7 +594,14 @@ export class GrowthProgressPool {
     this.totalAcquired = 0;
     this.totalReleased = 0;
     this.consecutiveLowUsageFrames = 0;
-    this.frameHistory = [];
+    this.frameHistoryIndex = 0;
+    this.frameHistoryCount = 0;
+    // Reset ring buffer entries in place
+    for (let i = 0; i < this.maxHistorySize; i++) {
+      this.frameHistory[i].frameNumber = 0;
+      this.frameHistory[i].usage = 0;
+      this.frameHistory[i].timestamp = 0;
+    }
   }
 
   /**

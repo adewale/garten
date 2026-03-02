@@ -29,6 +29,7 @@ export class Garten implements GardenController {
   private renderer!: Renderer;
   private plants: PlantData[] = [];
 
+  private destroyed: boolean = false;
   private state: PlaybackState = 'idle';
   private animationId: number | null = null;
   private startTime: number = 0;
@@ -143,7 +144,7 @@ export class Garten implements GardenController {
    * Start or resume playback
    */
   play(): void {
-    if (this.state === 'playing') return;
+    if (this.destroyed || this.state === 'playing') return;
 
     if (this.state === 'paused') {
       // Resume from paused position
@@ -384,6 +385,9 @@ export class Garten implements GardenController {
    * Clean up and remove from DOM
    */
   destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+
     // Stop animation
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId);
@@ -392,6 +396,9 @@ export class Garten implements GardenController {
 
     // Clean up renderer
     this.renderer.destroy();
+
+    // Release event callback references to allow GC of captured closures
+    this.options.events = {};
 
     // Clear state
     this.plants = [];

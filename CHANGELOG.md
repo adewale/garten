@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-03-02
+
+### Fixed
+
+- Fix GC pressure from per-frame allocations in animation loop (~70K+ throwaway objects/sec)
+  - `drawStem` now returns a reusable shared object instead of allocating per call
+  - `createFloweringContext` reuses a module-level context object
+  - Tall plant renderers reuse a single `SeededRandom` instance instead of allocating closures per frame
+- Fix `play()` after `destroy()` causing a runaway `requestAnimationFrame` loop with no way to stop it
+- Fix `destroy()` not clearing event callbacks, retaining user closures and everything they capture
+- Fix `GrowthProgressPool` frame history using `push()`/`shift()` (O(n) per frame) — now uses a ring buffer
+
+### Added
+
+- Property-based tests via `fast-check` covering Color, Vec2, GrowthProgress, SeededRandom, timing curves, utilities, and plant variation validity (44 tests)
+- Memory regression tests for `drawStem` shared-object contract, RNG determinism, pool frame history, and pool lifecycle (19 tests)
+- `LESSONS_LEARNED.md` documenting patterns and pitfalls from 5 audit cycles
+- Fade gradient caching in `Renderer` — avoids recreating `CanvasGradient` and parsing hex colors every frame
+
+### Changed
+
+- `drawStem` returns a shared object — callers must consume `.x`/`.y` before the next call
+- `GrowthProgressPool` frame history pre-allocates ring buffer slots at construction
+
 ## [1.0.1] - 2026-02-07
 
 ### Fixed
@@ -51,5 +75,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Full TypeScript support with type exports
 - Zero dependencies
 
+[1.0.2]: https://github.com/adewale/garten/releases/tag/v1.0.2
 [1.0.1]: https://github.com/adewale/garten/releases/tag/v1.0.1
 [1.0.0]: https://github.com/adewale/garten/releases/tag/v1.0.0

@@ -48,6 +48,7 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^2.0.0",
+    "fast-check": "^4.5.3",
     "jsdom": "^24.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.3.0",

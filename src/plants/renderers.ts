@@ -1,9 +1,16 @@
 import type { PlantData, PlantVariation } from '../types';
 import { PlantType, PlantCategory } from '../types';
-import { seededRandom, createRandom } from '../utils';
+import { seededRandom } from '../utils';
+import { SeededRandom } from '../SeededRandom';
 import { getPlantCategory } from './generator';
 import { getPlantVariation } from './variations';
 import { GrowthProgressPool, MutableGrowthProgress, getDefaultPool } from '../GrowthProgressPool';
+
+/**
+ * Reusable SeededRandom instance for tall plant renderers.
+ * Re-seeded per plant to avoid closure allocation every frame.
+ */
+const _tallPlantRng = new SeededRandom(0);
 
 /**
  * Common drawing context type
@@ -39,8 +46,20 @@ interface FloweringPlantContext {
 }
 
 /**
+ * Reusable flowering context to avoid per-plant per-frame allocation
+ * WARNING: Only valid until the next createFloweringContext call
+ */
+const _floweringCtx: FloweringPlantContext = {
+  x: 0,
+  baseY: 0,
+  plantHeight: 0,
+  phases: null as unknown as MutableGrowthProgress,
+};
+
+/**
  * Create render context for a flowering plant
  * Uses object pool for growth phase calculations
+ * Returns a shared object — callers must consume values before the next call
  */
 function createFloweringContext(
   plant: PlantData,
@@ -53,17 +72,23 @@ function createFloweringContext(
   const phases = calculateGrowthPhases(time, plant.delay, plant.growDuration, pool);
   if (!phases) return null;
 
-  return {
-    x: plant.x * width,
-    baseY: height,
-    plantHeight: plant.maxHeight * height * variation.heightMultiplier,
-    phases,
-  };
+  _floweringCtx.x = plant.x * width;
+  _floweringCtx.baseY = height;
+  _floweringCtx.plantHeight = plant.maxHeight * height * variation.heightMultiplier;
+  _floweringCtx.phases = phases;
+  return _floweringCtx;
 }
 
 
 /**
+ * Reusable output object for drawStem to avoid per-call allocation
+ * WARNING: Only valid until the next drawStem call — do not store references
+ */
+const _stemResult = { x: 0, y: 0 };
+
+/**
  * Draw a curved stem and return the end position
+ * Returns a shared object — callers must consume values before the next call
  */
 export function drawStem(
   ctx: Ctx,
@@ -96,7 +121,9 @@ export function drawStem(
   ctx.lineCap = 'round';
   ctx.stroke();
 
-  return { x: endX, y: endY };
+  _stemResult.x = endX;
+  _stemResult.y = endY;
+  return _stemResult;
 }
 
 /**
@@ -1271,15 +1298,15 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
 
     // Draw bamboo-style segmented culms
     const numCulms = 2 + Math.floor(variation.complexity * 3);
-    const rand = createRandom(plant.seed);
+    _tallPlantRng.setSeed(plant.seed);
 
     for (let c = 0; c < numCulms; c++) {
-      const offsetX = (rand() - 0.5) * 20 * variation.sizeMultiplier;
-      const culmHeight = plantHeight * (0.7 + rand() * 0.3) * stemGrowth;
-      const culmLean = (rand() - 0.5) * 0.15 * variation.leanMultiplier;
+      const offsetX = (_tallPlantRng.next() - 0.5) * 20 * variation.sizeMultiplier;
+      const culmHeight = plantHeight * (0.7 + _tallPlantRng.next() * 0.3) * stemGrowth;
+      const culmLean = (_tallPlantRng.next() - 0.5) * 0.15 * variation.leanMultiplier;
 
       // Draw segmented culm
-      const segments = 4 + Math.floor(rand() * 4);
+      const segments = 4 + Math.floor(_tallPlantRng.next() * 4);
       const segmentHeight = culmHeight / segments;
 
       ctx.strokeStyle = plant.stemColor;
@@ -1331,7 +1358,7 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     // Climber uses 1.2x growth rate
     const stemGrowth = Math.min(1, phases.progress * 1.2);
 
-    const rand = createRandom(plant.seed);
+    _tallPlantRng.setSeed(plant.seed);
 
     // Draw winding main vine
     ctx.strokeStyle = plant.stemColor;
@@ -1352,7 +1379,7 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
       const targetX = x + wave + plant.lean * plantHeight * t * 0.3;
 
       ctx.quadraticCurveTo(
-        (prevX + targetX) / 2 + (rand() - 0.5) * 10,
+        (prevX + targetX) / 2 + (_tallPlantRng.next() - 0.5) * 10,
         (prevY + targetY) / 2,
         targetX,
         targetY
@@ -1379,7 +1406,7 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
       const flowerGrowth = (stemGrowth - 0.6) * 2.5;
       const numFlowers = Math.max(1, 3 + Math.floor(variation.petalCountModifier));
       for (let f = 0; f < numFlowers; f++) {
-        const t = 0.3 + rand() * 0.5;
+        const t = 0.3 + _tallPlantRng.next() * 0.5;
         const fy = baseY - plantHeight * t * stemGrowth;
         const fx = x + Math.sin(t * Math.PI * 3) * 15 * variation.leanMultiplier + plant.lean * plantHeight * t * 0.3;
         drawSimpleFlower(ctx, fx, fy, 10 * plant.scale, plant.flowerColor, 5, Math.min(1, flowerGrowth), variation);
@@ -1399,7 +1426,7 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     // Foliage matches pool's foliage calculation (start 0.4, rate 1.7)
     const foliageGrowth = phases.foliage;
 
-    const rand = createRandom(plant.seed);
+    _tallPlantRng.setSeed(plant.seed);
 
     // Draw trunk
     const trunkHeight = plantHeight * 0.6 * trunkGrowth;
@@ -1422,11 +1449,11 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
       // Draw foliage clusters
       const clusters = 5 + Math.floor(variation.complexity * 4);
       for (let c = 0; c < clusters; c++) {
-        const angle = (c / clusters) * Math.PI * 2 + rand() * 0.5;
-        const dist = foliageRadius * (0.4 + rand() * 0.6);
+        const angle = (c / clusters) * Math.PI * 2 + _tallPlantRng.next() * 0.5;
+        const dist = foliageRadius * (0.4 + _tallPlantRng.next() * 0.6);
         const cx = x + Math.cos(angle) * dist * 0.8;
         const cy = foliageY - Math.abs(Math.sin(angle)) * dist * 0.6 - foliageRadius * 0.3;
-        const clusterSize = foliageRadius * (0.4 + rand() * 0.3);
+        const clusterSize = foliageRadius * (0.4 + _tallPlantRng.next() * 0.3);
 
         ctx.beginPath();
         ctx.arc(cx, cy, clusterSize, 0, Math.PI * 2);
@@ -1438,8 +1465,8 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
       if (variation.petalCountModifier > 4 && foliageGrowth > 0.5) {
         const numFlowers = Math.max(1, Math.floor(variation.petalCountModifier));
         for (let f = 0; f < numFlowers; f++) {
-          const angle = rand() * Math.PI * 2;
-          const dist = foliageRadius * (0.5 + rand() * 0.5);
+          const angle = _tallPlantRng.next() * Math.PI * 2;
+          const dist = foliageRadius * (0.5 + _tallPlantRng.next() * 0.5);
           const fx = x + Math.cos(angle) * dist * 0.8;
           const fy = foliageY - Math.abs(Math.sin(angle)) * dist * 0.6 - foliageRadius * 0.3;
           drawSimpleFlower(ctx, fx, fy, 6 * plant.scale, plant.flowerColor, 5, foliageGrowth, variation);
@@ -1458,7 +1485,7 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
     // Tropical uses 1.2x growth rate
     const growth = Math.min(1, phases.progress * 1.2);
 
-    const rand = createRandom(plant.seed);
+    _tallPlantRng.setSeed(plant.seed);
 
     // Draw trunk/stem
     const trunkHeight = plantHeight * 0.5 * growth;
@@ -1479,9 +1506,9 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
       const crownX = x + plant.lean * trunkHeight * 0.3;
 
       for (let f = 0; f < numFronds; f++) {
-        const angle = (f / numFronds) * Math.PI - Math.PI / 2 + (rand() - 0.5) * 0.3;
+        const angle = (f / numFronds) * Math.PI - Math.PI / 2 + (_tallPlantRng.next() - 0.5) * 0.3;
         const frondLength = 35 * plant.scale * variation.sizeMultiplier * frondGrowth;
-        const droop = 0.3 + rand() * 0.3;
+        const droop = 0.3 + _tallPlantRng.next() * 0.3;
 
         ctx.strokeStyle = plant.leafColor;
         ctx.lineWidth = 2 * plant.scale;
