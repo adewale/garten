@@ -10,6 +10,8 @@ Garten renders an animated garden of flowers, grasses, and foliage that graduall
 
 Take a look at an interactive demo: https://adewale.github.io/garten/
 
+![Garten interactive demo showing plant categories, scene presets, and configuration options](assets/demo-screenshot.png)
+
 ## Install
 
 ```bash
