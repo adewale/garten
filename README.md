@@ -8,6 +8,8 @@ Garten renders an animated garden of flowers, grasses, and foliage that graduall
 
 **147 plant types** across 19 categories: simple flowers, tulips, daisies, wildflowers, grasses, ferns, bushes, roses, lilies, orchids, succulents, herbs, specialty flowers, tall flowers (hollyhocks, delphiniums, foxgloves), giant grasses (bamboo, miscanthus), climbers (wisteria, clematis), small trees (birch, willow, cherry blossom), tropical plants (palms, bird of paradise), and conifers (pine, cypress, juniper).
 
+Take a look at an interactive demo: https://adewale.github.io/garten/
+
 ## Install
 
 ```bash
