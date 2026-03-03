@@ -1,6 +1,6 @@
 {
   "name": "garten",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Animated canvas garden that grows over time. Zero dependencies.",
   "author": "Ade Oshineye",
   "license": "MIT",
