@@ -72,6 +72,22 @@ Fixes every finding from the June 2026 audit (`docs/audit-report-2026-06.md`).
 
 ### Added
 
+- Testing approach rebuilt on [testing-best-practices](https://github.com/adewale/testing-best-practices)
+  research (`TESTING.md`): exhaustive 147-type render sweep under a strict
+  semantic canvas mock, doc-sync tests (README/FAQ verified against code and
+  build targets), cross-constant invariant tests, a fast-check totality
+  property over the options boundary, and an `es-check` dist syntax gate
+  (`npm run verify`). 946 tests; defect-reintroduction kill rate 12/12 vs
+  0/12 for the v1.0.x suite — see `docs/test-suite-benchmark-2026-06.md`
+- Root-cause sweep fixes: `GrowthProgress` partial-config merges no longer
+  NaN-poison phases via explicit `undefined`; `GrowthProgressPool` sanitizes
+  non-finite numeric config; invalid `density`/`palette`/`categories`/
+  `timingCurve` values fall back with a dev warning instead of crashing or
+  corrupting; `SeededRandom` normalizes non-finite seeds; an unparseable
+  `fadeColor` now warns once instead of silently disabling the fade
+- `GARDEN_EVENT_TYPES` runtime constant (the event union is derived from it)
+- `getCompletedGenerations()` — single source of generation-boundary math
+  (replaces the unused `getCurrentGeneration`/`didGenerationComplete`)
 - `background` option (default `'transparent'`): the canvas no longer paints
   an opaque white rectangle, so the garden works on dark and colored pages
 - `on()` / `once()` / `off()` subscription API on `Garten`, emitting

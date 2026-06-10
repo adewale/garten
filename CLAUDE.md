@@ -8,8 +8,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run build      # Build ESM, CJS, and IIFE bundles with tsup
 npm run dev        # Watch mode for development
 npm run typecheck  # Type check without emitting
+npm run test:run   # Run the test suite once
+npm run verify     # typecheck + tests + build + dist syntax gate (pre-publish)
 npm run clean      # Remove dist directory
 ```
+
+Testing conventions and the boundary-coverage approach are documented in
+`TESTING.md` — read it before adding or modifying tests.
 
 ## Architecture
 

@@ -30,6 +30,8 @@ The shallow merge pattern `{ ...defaults, ...userOptions }` appeared in three in
 
 Each was fixed independently over multiple commits before the pattern was recognized. **When you find a shallow merge bug, grep the entire codebase for the same pattern** — it's almost certainly repeated.
 
+**Postscript (v1.1.0):** it recurred anyway. A fourth instance (`applyTheme` writing explicit `undefined` into color fields) crashed 6 of 11 built-in themes, and a fifth (`GrowthProgress` config merges) NaN-poisoned growth phases — both *after* this lesson was written down. The durable fix was not prose: it was an `omitUndefined()` helper used at every merge site, plus a fast-check property asserting `resolveOptions` is total over fuzzed partial options (including explicit `undefined` in every field). See lesson 20.
+
 ## 3. Documentation Drifts From Code Relentlessly
 
 Across several audit cycles, 13+ documentation inconsistencies were found:
@@ -41,6 +43,8 @@ Across several audit cycles, 13+ documentation inconsistencies were found:
 - Invalid category names in demo presets (`bird-of-paradise`, `lavender`)
 
 **Lesson:** Documentation errors accumulate silently. When code changes, docs don't update themselves. Audit docs against code periodically, and consider integration tests that verify documented counts/names match actual exports.
+
+**Postscript (v1.1.0):** "consider integration tests" became `src/docs-sync.test.ts`: every theme, preset, category, option, and event must appear in the README; plant-type/category counts are asserted against the enums; the browser-support claim is parsed out of `tsup.config.ts` targets and matched against README and FAQ. On its first run it caught a live gap (the `colors` option was undocumented). Doc drift is now a failing test, not a periodic audit chore.
 
 ## 4. Lifecycle Bugs: Destroy Must Be Thorough
 
@@ -124,3 +128,57 @@ Garten's pooling evolved through three levels:
 3. **Module-level reusable objects** — `_stemResult`, `_floweringCtx`, `_tallPlantRng` for singleton hot-path returns. Zero allocation but requires caller discipline.
 
 Each level trades API simplicity for allocation reduction. The right level depends on how hot the path actually is — profile before pooling.
+
+## 13. Coverage by File Lies; Measure Coverage by Risk Boundary
+
+At v1.0.3 the suite had 503 tests and looked thorough — yet `Garden.ts` and `Renderer.ts` (the controller and the canvas layer, where users actually live) had **0% coverage**, and `plants/renderers.ts` had 6.6%. Meanwhile `palettes.ts` showed 100% line coverage *with a palette-truncation bug in it* and `presets.ts` 99.7% *with a constructor-crashing bug in it*.
+
+Every high-severity defect found in the June 2026 audit lived in a seam the suite never crossed: constructor wiring, the rAF loop, resize, theme output feeding the constructor.
+
+**Lesson:** list your risk boundaries (user input → options, options → generation, generation → canvas, time → events, docs → users) and ask "which test crosses this?" — not "which file has coverage?". Coverage percentage is informational; an untested *boundary* is a finding.
+
+## 14. Test Through the Real Producer, Not Hand-Built Fixtures
+
+Palette tests called `buildFlowerColors` with carefully hand-built, fully-populated options objects — and passed. The crash lived precisely in the difference between those fixtures and what `applyTheme` *actually emits* (explicit `undefined` fields). The README's own `applyTheme('sakura')` example crashed while the suite was green.
+
+**Lesson:** when module B consumes module A's output, at least one test must feed B with A's *real* output, not a fixture imitating it. The constructibility suite now runs every shipped theme, preset, and preset×theme combination through `resolveOptions → generatePlants`.
+
+## 15. Mocks Must Encode Platform Semantics, Not Record Calls
+
+A call-recording canvas mock happily reported `quadraticCurveTo` called 8 times — it could not show that 7 of those segments were silently discarded because `drawLeaf()` called `beginPath()` mid-construction. Climber vines rendered broken for multiple releases. The same blindness hid that `canvas.width = x` wipes the bitmap (resize blanked paused gardens).
+
+**Lesson:** for stateful platform APIs (canvas, WebGL, audio graphs), the mock must model the state machine: unflushed-path detection, save/restore depth, negative-radius throws, non-finite coordinate flags. Our strict mock turned an invisible bug class into `expect(ctx.violations).toEqual([])`.
+
+## 16. When the State Space Is Bounded, Test All of It
+
+147 plant types × 6 growth stages is 882 cheap cases — there was never a reason to sample. The climber bug hid because climbers only appear at `maxHeight >= 0.5` and no default config or test ever rendered one. The exhaustive sweep also asserts every type draws *something* at full growth, so a silently-blank plant type is now impossible.
+
+**Lesson:** enums, flag sets, and small config lattices (density × palette × maxHeight) should be enumerated exhaustively, not sampled by example tests. Reserve property-based randomness for genuinely unbounded spaces.
+
+## 17. Unwritten Invariants Don't Exist
+
+The seed-stride collision (gen stride 1000 < 30 plants × 100) and the pool-cap crash (OPTION_BOUNDS allows ~30,000 plants; pool hard-capped at 16,384) were both pairs of *individually plausible* constants that nobody ever checked against each other. There was no place where "no two plants may share an RNG stream" or "the pool must cover the worst legal config" was stated.
+
+**Lesson:** cross-cutting invariants must be articulated as executable tests (`constants.test.ts`). When a re-introduced seed-stride bug is killed by the *invariant* test before any behavioral test fires, the invariant is doing its job.
+
+## 18. Documentation Claims Need Failing Conditions
+
+"Chrome 64+, Safari 12+" was false for two releases: the bundles contained `??`/`?.` that those browsers cannot parse. The claim was mechanically checkable the whole time. Now `tsup.config.ts` declares the targets, `es-check` gates `dist/` syntax in `npm run verify`, and a doc-sync test parses the targets and asserts the README/FAQ claim matches them.
+
+**Lesson:** every checkable claim in docs — version minimums, counts, option lists, API shapes — should have a test or build gate that fails when it stops being true.
+
+## 19. Measure the Suite, Not Just the Code
+
+Numbers from the v1.1.0 testing upgrade (same machine, see `docs/test-suite-benchmark-2026-06.md`):
+
+- Defect-reintroduction probes: 12 historical defects re-applied one at a time. v1.0.3 suite kill rate: **0/12** (all shipped green). Upgraded suite: **12/12**, most killed by several independent tests.
+- Line coverage 57.5% → 88.8%; `Garden.ts` 0% → 88.5%; `plants/renderers.ts` 6.6% → 99.7%.
+- The v1.0.3 suite could not even *run* under coverage instrumentation — wall-clock perf assertions failed. Budgets are now regression canaries (~10× headroom).
+
+**Lesson:** "does the suite catch the bugs we actually shipped?" is a measurable question. Re-introduce fixed defects periodically (or run mutation testing) — a suite that has never been measured against real defects is an untested test suite.
+
+## 20. A Lesson Written as Prose Is a Lesson Waiting to Recur
+
+Lesson 2 documented the shallow-merge bug class and its three fixed instances — and the fourth instance shipped anyway, crashing six themes. Prose doesn't execute.
+
+**Lesson:** every entry in this file should end with a pointer to the *mechanism* that enforces it — a helper everyone must use, a type that makes the bug unrepresentable, a test that fails, or a build gate. If a lesson has no mechanism, it is a TODO, not a lesson. (This file now practices what it preaches: lessons 2, 3, 13–19 each name their enforcing test or gate.)
