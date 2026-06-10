@@ -80,27 +80,66 @@ ever sampled that region — exhaustiveness is the structural fix.
 - Fake time completely (`requestAnimationFrame`, `performance`, timers); for
   multi-second jumps in one frame, drive the rAF callback by hand
 
+## Real-pixel tests (Playwright)
+
+`tests/visual/garden.spec.ts` runs the **built IIFE bundle** in real Chromium
+and asserts on the actual rasterized bitmap — the layer the vitest suite
+cannot see:
+
+- **Pixel probes** (platform-independent): background alpha is 0 by default
+  and exactly the configured color with the `background` option; a completed
+  garden paints >5k pixels in the bottom band and none above `maxHeight`; a
+  `maxHeight: 1` garden paints the *top* band (the formerly-invisible tall
+  region); the same seed produces a **byte-identical** bitmap across page
+  loads; a real `ResizeObserver` resize repaints the frame while idle.
+- **Golden screenshots** (change detection): three committed Linux-Chromium
+  goldens (default complete, mid-growth, tall-on-dark). Regenerate with
+  `npm run test:visual -- --update-snapshots`; AA is the only variance
+  (no text is rendered), budgeted at `maxDiffPixelRatio: 0.01`.
+
+```bash
+npx playwright install chromium   # one-time browser download
+npm run test:e2e                  # build + visual + contract projects
+```
+
+## Mock contract tests (Playwright)
+
+`tests/contract/canvas-contract.spec.ts` validates every hand-encoded rule of
+the strict vitest mock against a **real browser canvas**, so the mock cannot
+drift from the platform. One test per rule, pixel-verified where possible:
+`beginPath()` really discards an unflushed path; negative radii really throw
+`IndexSizeError`; non-finite coordinates are really silent no-ops (which is
+why the mock flags them); `save()/restore()` really restores style state;
+`restore()` underflow is a no-op; paths are baked in user space at
+construction (the `drawLeaf` pattern); `canvas.width` assignment really wipes
+the bitmap (the resize-bug root); and every color format the library emits
+parses. If one of these fails after a browser update, the platform changed —
+update the mock and renderers to match.
+
 ## Measuring the suite itself
 
 The suite's strength is verified, not assumed:
 
+- **Automated mutation testing (Stryker)**: `npm run test:mutation:core`
+  mutates the options/palette/growth/generation boundary files and runs the
+  vitest suite per mutant (`coverageAnalysis: perTest`, incremental cache in
+  `reports/stryker-incremental.json`); `npm run test:mutation` covers all of
+  `src/`. Scores and methodology: `docs/test-suite-benchmark-2026-06.md`.
+  Run it after substantial suite or boundary changes — it is too slow for
+  the per-commit `verify` gate.
 - **Defect-reintroduction probes**: the 12 historical defects from the June
   2026 audit are re-applied one at a time and the suite must kill each one.
   Current kill rate: 12/12 (the v1.0.3 suite scored 0/12 — every defect
-  shipped under green). Re-run after major suite changes; the probe patches
-  are documented in `docs/test-suite-benchmark-2026-06.md`.
+  shipped under green). The probes remain the curated, fast complement to
+  Stryker: they encode *real shipped bugs* rather than synthetic operators.
 - When fixing any bug: write the failing test first (red), fix (green), and
   ask which *class* the bug belongs to — then add the class-level net
   (property, invariant, or sweep), not just the instance-level regression.
 
 ## Known gaps / future work
 
-- No real-pixel rendering tests: the strict mock checks call semantics, not
-  rasterization. Playwright screenshot tests against the demo page would
-  close this (see `testing-best-practices` references on visual regression
-  and mock contract validation).
-- No automated mutation testing (Stryker); the defect-reintroduction probes
-  are a manual, curated subset.
-- jsdom mock contract: the strict mock's semantics are hand-encoded from the
-  spec; a periodic contract test against a real browser canvas would keep
-  them honest.
+- Visual goldens are Linux-Chromium only (the CI platform). Cross-browser
+  pixel parity (WebKit/Firefox projects) is possible but each adds a golden
+  set; the pixel-probe assertions already run identically everywhere.
+- Mutation testing is scoped + scheduled rather than gating: a full-`src`
+  run is CPU-expensive. Revisit if CI capacity allows.

@@ -84,7 +84,46 @@ were motivated by correctness/portability; the speedups are a side effect.
 \* v1.0.3's 502 includes the duplicate plants from the seed-collision bug —
 many were pixel-identical overlaps, so its *visible* plant count was lower.
 
-## 5. How to re-run
+## 5. Addendum: the three remaining gaps, closed
+
+The original upgrade left three stated gaps; all three are now closed.
+
+### 5a. Real-pixel rendering tests (Playwright + Chromium)
+
+`tests/visual/garden.spec.ts` runs the **built IIFE bundle** in real Chromium
+(6 tests): pixel probes assert the transparent default background (alpha 0),
+the `background` option's exact RGBA, painted-pixel distribution per vertical
+band (a `maxHeight: 1` garden must rasterize pixels in the *top* third — the
+region where the climber bug hid), **byte-identical bitmaps for the same seed
+across page loads**, and a repaint after a real `ResizeObserver` resize.
+Three Linux-Chromium golden screenshots are committed for change detection.
+
+### 5b. Canvas mock contract tests
+
+`tests/contract/canvas-contract.spec.ts` (8 tests) validates every
+hand-encoded rule of the strict vitest mock against a real browser canvas:
+path discard by `beginPath()` (pixel-verified), `IndexSizeError` on negative
+radii, silent no-op on non-finite coordinates, save/restore state semantics,
+restore-underflow no-op, user-space path baking (the `drawLeaf` pattern),
+bitmap wipe on `canvas.width` assignment, and color-format parsing. All 8
+passed on first run — the mock's encoded semantics match Chromium exactly.
+
+### 5c. Automated mutation testing (Stryker)
+
+`stryker.config.json` + `@stryker-mutator/vitest-runner` with perTest
+coverage analysis and an incremental cache. Scoped core run
+(`npm run test:mutation:core`) over the options/palette/growth/generation
+boundary files:
+
+| File | Mutation score |
+|---|---|
+| _scoped core run executing; scores recorded in the follow-up commit_ | |
+
+The defect-reintroduction probes (section 1) remain the fast, curated
+complement: they encode real shipped bugs; Stryker covers the synthetic
+operator space between them.
+
+## 6. How to re-run
 
 - Perf: the scratch benchmark lives in this commit's history (used a no-op
   canvas context, `vitest run`, best-of-5).

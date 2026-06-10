@@ -20,3 +20,11 @@ coverage/
 # Logs
 *.log
 npm-debug.log*
+
+# Playwright
+test-results/
+playwright-report/
+
+# Stryker mutation testing
+.stryker-tmp/
+reports/

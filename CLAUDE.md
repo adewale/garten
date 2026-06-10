@@ -10,6 +10,8 @@ npm run dev        # Watch mode for development
 npm run typecheck  # Type check without emitting
 npm run test:run   # Run the test suite once
 npm run verify     # typecheck + tests + build + dist syntax gate (pre-publish)
+npm run test:e2e   # Real-pixel + canvas-contract tests in Chromium (needs `npx playwright install chromium`)
+npm run test:mutation:core  # Stryker mutation testing on the core boundary files (slow; not part of verify)
 npm run clean      # Remove dist directory
 ```
 

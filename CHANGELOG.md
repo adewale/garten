@@ -72,6 +72,19 @@ Fixes every finding from the June 2026 audit (`docs/audit-report-2026-06.md`).
 
 ### Added
 
+- Real-pixel rendering tests (Playwright + Chromium, `tests/visual/`): the
+  built IIFE bundle is exercised in a real browser with pixel-probe
+  assertions (transparent/colored background, painted-band distribution,
+  byte-identical determinism across page loads, repaint after a real
+  ResizeObserver resize) plus three committed golden screenshots
+- Canvas mock contract tests (`tests/contract/`): every hand-encoded rule of
+  the strict vitest canvas mock is validated against real Chromium (path
+  discard, IndexSizeError on negative radii, silent non-finite no-ops,
+  save/restore semantics, user-space path baking, bitmap wipe on
+  `canvas.width` assignment, color format parsing)
+- Automated mutation testing via Stryker (`npm run test:mutation`,
+  `test:mutation:core` for the options/palette/growth/generation boundary)
+  with perTest coverage analysis and an incremental cache
 - Testing approach rebuilt on [testing-best-practices](https://github.com/adewale/testing-best-practices)
   research (`TESTING.md`): exhaustive 147-type render sweep under a strict
   semantic canvas mock, doc-sync tests (README/FAQ verified against code and
