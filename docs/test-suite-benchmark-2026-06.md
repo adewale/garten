@@ -111,17 +111,44 @@ passed on first run — the mock's encoded semantics match Chromium exactly.
 ### 5c. Automated mutation testing (Stryker)
 
 `stryker.config.json` + `@stryker-mutator/vitest-runner` with perTest
-coverage analysis and an incremental cache. Scoped core run
-(`npm run test:mutation:core`) over the options/palette/growth/generation
-boundary files:
+coverage analysis and an incremental cache. Baseline from the first scoped
+core run (`npm run test:mutation:core`, ~900 mutants, 7m34s, 38 tests/mutant
+average):
 
-| File | Mutation score |
-|---|---|
-| _scoped core run executing; scores recorded in the follow-up commit_ | |
+| File | Score (total) | Score (covered) | Killed | Survived | No coverage |
+|---|---|---|---|---|---|
+| `palettes.ts` | 95.4% → **96.9%** | 96.4% → 97.9% | 185 → 188 | 7 → 4 | 2 |
+| `GrowthProgress.ts` | 67.6% | 71.5% | 163 | 65 | 13 |
+| `plants/generator.ts` | 55.8% | 62.0% | 156 | 97 | 28 |
+| `defaults.ts` | 44.6% | 52.2% | 80 | 75 | 27 |
+| **Core boundary total** | **65.2%** | **70.7%** | 584 | 244 | 70 |
+
+Reading the spread honestly:
+
+- **`palettes.ts` at ~97% validates the method**: it is the file that received
+  class-level nets (reachability constraint, proportion property,
+  constructibility). Its surviving-mutant examples exposed a real gap —
+  nothing asserted built color arrays contain *well-formed values* — which
+  was closed immediately with a well-formedness constraint test (the arrows
+  above show before → after; the incremental re-run took 51s vs 7m34s cold).
+  The remaining 4 survivors are the `MAX_ACCENT_RATIO` cap region —
+  equivalent-ish for any sane cap value.
+- **`generator.ts` survivors are dominated by tuning constants** (category
+  weights `0.15 → 0.16`, height-range table values, bias-curve exponents):
+  for a generative-art library most of these are *equivalent-ish mutants* —
+  any nearby value produces a valid-looking garden. Killing them would mean
+  golden-pinning aesthetic constants; the visual golden screenshots cover
+  this class at the integration level instead.
+- **`defaults.ts` survivors and no-coverage cluster in dev-warning strings,
+  `NODE_ENV` guards, and exact bound edges** — warnings are asserted by
+  presence, not text, and tests probe representative rather than boundary
+  values. The genuinely load-bearing behavior (sanitization, fallback,
+  clamping direction) is held separately by the fuzz totality property.
 
 The defect-reintroduction probes (section 1) remain the fast, curated
 complement: they encode real shipped bugs; Stryker covers the synthetic
-operator space between them.
+operator space between them and is run after substantial boundary or suite
+changes (incremental cache keeps re-runs cheap).
 
 ## 6. How to re-run
 
@@ -130,3 +157,8 @@ operator space between them.
 - Coverage: `npx vitest run --coverage --coverage.reporter=json-summary`.
 - Probes: re-apply each table-1 mutation (regex patches over the named
   files), run `npm run test:run`, expect failure, `git checkout -- <file>`.
+- Mutation testing: `npm run test:mutation:core` (scoped) or
+  `npm run test:mutation` (full src); HTML report at
+  `reports/mutation/mutation.html`, incremental cache in `reports/`.
+- Real-pixel + contract: `npx playwright install chromium` once, then
+  `npm run test:e2e`.

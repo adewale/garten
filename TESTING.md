@@ -124,9 +124,12 @@ The suite's strength is verified, not assumed:
   mutates the options/palette/growth/generation boundary files and runs the
   vitest suite per mutant (`coverageAnalysis: perTest`, incremental cache in
   `reports/stryker-incremental.json`); `npm run test:mutation` covers all of
-  `src/`. Scores and methodology: `docs/test-suite-benchmark-2026-06.md`.
-  Run it after substantial suite or boundary changes — it is too slow for
-  the per-commit `verify` gate.
+  `src/`. Baseline, scores, and how to read survivors (tuning constants vs
+  real assertion gaps): `docs/test-suite-benchmark-2026-06.md` §5c. Run it
+  after substantial suite or boundary changes — it is too slow for the
+  per-commit `verify` gate. When a survivor exposes a real gap, kill it with
+  a *class-level* assertion (e.g. the color well-formedness constraint), not
+  a mutant-shaped one.
 - **Defect-reintroduction probes**: the 12 historical defects from the June
   2026 audit are re-applied one at a time and the suite must kill each one.
   Current kill rate: 12/12 (the v1.0.3 suite scored 0/12 — every defect
