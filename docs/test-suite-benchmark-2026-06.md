@@ -115,13 +115,24 @@ coverage analysis and an incremental cache. Baseline from the first scoped
 core run (`npm run test:mutation:core`, ~900 mutants, 7m34s, 38 tests/mutant
 average):
 
+Arrows show the survivor-mining pass: survivors were classified, the
+load-bearing ones killed with class-level nets, and the files re-scored via
+the incremental cache (51s–2m24s per re-run vs 7m34s cold).
+
 | File | Score (total) | Score (covered) | Killed | Survived | No coverage |
 |---|---|---|---|---|---|
 | `palettes.ts` | 95.4% → **96.9%** | 96.4% → 97.9% | 185 → 188 | 7 → 4 | 2 |
-| `GrowthProgress.ts` | 67.6% | 71.5% | 163 | 65 | 13 |
+| `GrowthProgress.ts` | 67.6% → **88.0%** | 71.5% → 89.1% | 163 → 212 | 65 → 26 | 13 → 3 |
 | `plants/generator.ts` | 55.8% | 62.0% | 156 | 97 | 28 |
-| `defaults.ts` | 44.6% | 52.2% | 80 | 75 | 27 |
-| **Core boundary total** | **65.2%** | **70.7%** | 584 | 244 | 70 |
+| `defaults.ts` | 44.6% → **51.1%** | 52.2% → 59.9% | 80 → 94 | 75 → 63 | 27 |
+| **Core boundary total** | 65.2% → **~73%** | 70.7% → ~78% | | | |
+
+Nets added in the survivor-mining pass: pinned *default option values* (a
+mutant flipping `loop: false` to `true` had survived the entire suite!),
+exhaustive bounds-edge clamping for every numeric option, easing-function
+mathematical contracts (endpoints, monotonicity, in/out ordering — entire
+case bodies could previously be emptied unnoticed), per-field sensitivity of
+`equals`/`approximatelyEquals`, and exact phase/activity boundaries.
 
 Reading the spread honestly:
 
@@ -139,11 +150,11 @@ Reading the spread honestly:
   any nearby value produces a valid-looking garden. Killing them would mean
   golden-pinning aesthetic constants; the visual golden screenshots cover
   this class at the integration level instead.
-- **`defaults.ts` survivors and no-coverage cluster in dev-warning strings,
-  `NODE_ENV` guards, and exact bound edges** — warnings are asserted by
-  presence, not text, and tests probe representative rather than boundary
-  values. The genuinely load-bearing behavior (sanitization, fallback,
-  clamping direction) is held separately by the fuzz totality property.
+- **`defaults.ts` remaining survivors are almost entirely dev-warning
+  machinery** (warn message strings, `NODE_ENV` guards, the warn branch of
+  each fallback) — warnings are asserted by presence, not text, by policy.
+  The load-bearing behavior (defaults, clamp edges, sanitization, fallback
+  values) is now pinned directly; what survives is the equivalent-ish class.
 
 The defect-reintroduction probes (section 1) remain the fast, curated
 complement: they encode real shipped bugs; Stryker covers the synthetic

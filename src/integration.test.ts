@@ -19,6 +19,7 @@ import { flowerPalettes } from './palettes';
 import { hexToRgb as utilsHexToRgb } from './utils';
 import { hexToRgb as colorHexToRgb } from './Color';
 import { getCompletedGenerations } from './plants/generator';
+import { OPTION_BOUNDS } from './constants';
 import * as fc from 'fast-check';
 
 describe('Integration: SeededRandom + Vec2', () => {
@@ -1991,5 +1992,75 @@ describe('Constraint: getCompletedGenerations is the single source of boundary m
     expect(getCompletedGenerations(50, 0, 10)).toBe(0);
     expect(getCompletedGenerations(50, 100, 0)).toBe(0);
     expect(getCompletedGenerations(-5, 100, 10)).toBe(0);
+  });
+});
+
+// ==================== DEFAULT VALUES ====================
+// Mutation testing showed nothing pinned the actual default values — a
+// mutant flipping `loop: false` to `true` survived the entire suite.
+// These are the documented defaults from the README options tables.
+
+describe('Constraint: resolved defaults match the documented values', () => {
+  it('every option resolves to its documented default', () => {
+    const resolved = resolveOptions({ container: document.createElement('div') });
+
+    expect(resolved.duration).toBe(600);
+    expect(resolved.generations).toBe(47);
+    expect(resolved.maxHeight).toBe(0.35);
+    expect(resolved.density).toBe('normal');
+    expect(resolved.categories).toBeNull();
+    expect(resolved.loop).toBe(false);
+    expect(resolved.speed).toBe(1);
+    expect(resolved.autoplay).toBe(true);
+    expect(resolved.respectReducedMotion).toBe(true);
+    expect(resolved.maxPixelRatio).toBe(2);
+    expect(resolved.targetFPS).toBe(30);
+    expect(resolved.timingCurve).toBe('linear');
+    expect(resolved.background).toBe('transparent');
+    expect(resolved.zIndex).toBe(-1);
+    expect(resolved.opacity).toBe(1);
+    expect(resolved.fadeHeight).toBe(0);
+    expect(resolved.fadeColor).toBe('#ffffff');
+    expect(resolved.colors.accent).toBe('#F6821F');
+    expect(resolved.colors.palette).toBe('natural');
+    expect(resolved.colors.flowerColors).toEqual([]);
+    expect(resolved.colors.foliageColors).toEqual([]);
+    expect(resolved.colors.accentWeight).toBe(0.4);
+  });
+});
+
+// ==================== BOUNDS EDGES ====================
+// Exhaustive: every clamped numeric option, probed just outside and exactly
+// at both bounds. Kills the bounds-table and clamp-direction mutants.
+
+describe('Exhaustive: numeric options clamp exactly at their bounds', () => {
+  const cases = [
+    ['duration', OPTION_BOUNDS.DURATION],
+    ['generations', OPTION_BOUNDS.GENERATIONS],
+    ['maxHeight', OPTION_BOUNDS.MAX_HEIGHT],
+    ['speed', OPTION_BOUNDS.SPEED],
+    ['maxPixelRatio', OPTION_BOUNDS.MAX_PIXEL_RATIO],
+    ['targetFPS', OPTION_BOUNDS.TARGET_FPS],
+    ['opacity', OPTION_BOUNDS.OPACITY],
+    ['fadeHeight', OPTION_BOUNDS.FADE_HEIGHT],
+    ['zIndex', OPTION_BOUNDS.Z_INDEX],
+  ] as const;
+
+  it.each(cases)('%s clamps to [min, max]', (key, { min, max }) => {
+    const container = document.createElement('div');
+    const resolve = (value: number) =>
+      resolveOptions({ container, [key]: value } as never)[key] as number;
+
+    expect(resolve(min - 1000)).toBe(min);
+    expect(resolve(min)).toBe(min);
+    expect(resolve(max)).toBe(max);
+    expect(resolve(max + 1000)).toBe(max);
+  });
+
+  it('seed wraps into [0, max) instead of clamping', () => {
+    const container = document.createElement('div');
+    const { max } = OPTION_BOUNDS.SEED;
+    expect(resolveOptions({ container, seed: max + 5 }).seed).toBe(5);
+    expect(resolveOptions({ container, seed: -1 }).seed).toBe(max - 1);
   });
 });

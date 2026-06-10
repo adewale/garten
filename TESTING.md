@@ -18,6 +18,12 @@ npm run check:dist     # es-check: dist/ parses at the documented browser level
 
 `npm run verify` is the pre-publish gate (`prepublishOnly`).
 
+CI (`.github/workflows/ci.yml`) runs `verify` and the Chromium suites on
+every PR/push to main, and the scoped mutation run weekly or on demand
+(`workflow_dispatch`), uploading the HTML report as an artifact. Perf
+canaries assume an uncontended runner — running the vitest suite while a
+local Stryker run saturates the CPU can flake them.
+
 ## Organizing principle: cover risk boundaries, not files
 
 Coverage percentage is informational. The question each suite answers is
