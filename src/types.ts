@@ -629,18 +629,25 @@ export type PlantRenderer = (
 // ==================== EVENT EMITTER TYPES ====================
 
 /**
+ * All garden event types, available at runtime (e.g. for doc-sync tests
+ * and dynamic subscription UIs)
+ */
+export const GARDEN_EVENT_TYPES = [
+  'play',
+  'pause',
+  'stop',
+  'complete',
+  'progress',
+  'generationComplete',
+  'stateChange',
+  'regenerate',
+  'optionsChange',
+] as const;
+
+/**
  * Event types for the garden
  */
-export type GardenEventType =
-  | 'play'
-  | 'pause'
-  | 'stop'
-  | 'complete'
-  | 'progress'
-  | 'generationComplete'
-  | 'stateChange'
-  | 'regenerate'
-  | 'optionsChange';
+export type GardenEventType = (typeof GARDEN_EVENT_TYPES)[number];
 
 /**
  * Event handler type

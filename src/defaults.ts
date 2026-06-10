@@ -102,6 +102,53 @@ function clampFraction(value: number | undefined, defaultValue: number): number 
  */
 export const plantsPerGeneration: Record<Density, readonly [number, number]> = PLANTS_PER_GENERATION;
 
+const VALID_DENSITIES = Object.keys(PLANTS_PER_GENERATION) as Density[];
+const VALID_PALETTES: ReadonlyArray<Required<ColorOptions>['palette']> = [
+  'natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone',
+];
+
+function warnInvalid(option: string, value: unknown, fallback: unknown): void {
+  if (typeof process !== 'undefined' && process?.env?.NODE_ENV !== 'production') {
+    console.warn(`Garten: Invalid ${option} ${JSON.stringify(value)}; using ${JSON.stringify(fallback)}.`);
+  }
+}
+
+/** Resolve density, falling back to the default for unknown values */
+function resolveDensity(value: Density | undefined): Density {
+  if (value === undefined) return defaultOptions.density;
+  if ((VALID_DENSITIES as string[]).includes(value)) return value;
+  warnInvalid('density', value, defaultOptions.density);
+  return defaultOptions.density;
+}
+
+/** Resolve palette, falling back to the default for unknown values */
+function resolvePalette(
+  value: Required<ColorOptions>['palette'] | undefined
+): Required<ColorOptions>['palette'] {
+  if (value === undefined) return defaultColorOptions.palette;
+  if ((VALID_PALETTES as string[]).includes(value)) return value;
+  warnInvalid('colors.palette', value, defaultColorOptions.palette);
+  return defaultColorOptions.palette;
+}
+
+/** Resolve categories: must be an array of strings (or absent) */
+function resolveCategories(value: string[] | null | undefined): string[] | null {
+  if (value === undefined || value === null) return defaultOptions.categories;
+  if (Array.isArray(value)) return value;
+  warnInvalid('categories', value, null);
+  return null;
+}
+
+/** Resolve timing curve: numeric curves must be finite */
+function resolveTimingCurve(value: ResolvedOptions['timingCurve'] | undefined): ResolvedOptions['timingCurve'] {
+  if (value === undefined) return defaultOptions.timingCurve;
+  if (typeof value === 'number' && !Number.isFinite(value)) {
+    warnInvalid('timingCurve', value, defaultOptions.timingCurve);
+    return defaultOptions.timingCurve;
+  }
+  return value;
+}
+
 /**
  * Validate CSS selector format using browser's native validation
  */
@@ -155,6 +202,7 @@ export function resolveOptions(options: GardenOptions): ResolvedOptions {
   };
   const colors: Required<ColorOptions> = {
     ...mergedColors,
+    palette: resolvePalette(mergedColors.palette),
     flowerColors: Array.isArray(mergedColors.flowerColors) ? mergedColors.flowerColors : [],
     foliageColors: Array.isArray(mergedColors.foliageColors) ? mergedColors.foliageColors : [],
     accentWeight: clampFraction(mergedColors.accentWeight, defaultColorOptions.accentWeight),
@@ -173,8 +221,8 @@ export function resolveOptions(options: GardenOptions): ResolvedOptions {
     generations: resolveNumber(options.generations, defaultOptions.generations, 'generations'),
     maxHeight: resolveNumber(options.maxHeight, defaultOptions.maxHeight, 'maxHeight'),
     colors,
-    density: options.density ?? defaultOptions.density,
-    categories: options.categories ?? defaultOptions.categories,
+    density: resolveDensity(options.density),
+    categories: resolveCategories(options.categories),
     loop: options.loop ?? defaultOptions.loop,
     speed: resolveNumber(options.speed, defaultOptions.speed, 'speed'),
     autoplay: options.autoplay ?? defaultOptions.autoplay,
@@ -187,7 +235,7 @@ export function resolveOptions(options: GardenOptions): ResolvedOptions {
     ),
     maxPixelRatio: resolveNumber(options.maxPixelRatio, defaultOptions.maxPixelRatio, 'maxPixelRatio'),
     targetFPS: resolveNumber(options.targetFPS, defaultOptions.targetFPS, 'targetFPS'),
-    timingCurve: options.timingCurve ?? defaultOptions.timingCurve,
+    timingCurve: resolveTimingCurve(options.timingCurve),
     background: typeof options.background === 'string' ? options.background : defaultOptions.background,
     zIndex: resolveNumber(options.zIndex, defaultOptions.zIndex, 'zIndex'),
     opacity: resolveNumber(options.opacity, defaultOptions.opacity, 'opacity'),

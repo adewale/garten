@@ -25,6 +25,9 @@ export class Renderer {
   private lastPlants: PlantData[] | null = null;
   private lastTime: number = 0;
 
+  // Tracks whether an unparseable fadeColor has been reported (warn once)
+  private warnedInvalidFadeColor = false;
+
   // Cached fade gradient state (avoid re-creating gradient + strings every frame)
   private fadeGradientCache: {
     fadeColor: string;
@@ -183,7 +186,16 @@ export class Renderer {
     ) {
       // Parse fade color to RGB
       const rgb = hexToRgb(fadeColor);
-      if (!rgb) return;
+      if (!rgb) {
+        // Don't silently disable the fade the user asked for
+        if (!this.warnedInvalidFadeColor) {
+          this.warnedInvalidFadeColor = true;
+          console.warn(
+            `Garten: fadeColor ${JSON.stringify(fadeColor)} is not a valid hex color; the fade effect is disabled.`
+          );
+        }
+        return;
+      }
 
       // Calculate fade zone positions
       const plantTopY = this.height * (1 - maxHeight);
@@ -272,6 +284,7 @@ export class Renderer {
 
     // Invalidate cached gradient when options change
     this.fadeGradientCache = null;
+    this.warnedInvalidFadeColor = false;
 
     // Update canvas style if z-index or opacity changed
     this.canvas.style.zIndex = String(options.zIndex);

@@ -5,6 +5,7 @@
  */
 
 import { GROWTH_PHASES } from './constants';
+import { omitUndefined } from './utils';
 
 /**
  * Growth phases data structure
@@ -118,10 +119,7 @@ export class GrowthProgress {
     config?: Partial<GrowthConfig>
   ): GrowthProgress {
     const progress = (time - delay) / duration;
-    const fullConfig = config
-      ? { ...GrowthProgress.defaultConfig, ...config }
-      : GrowthProgress.defaultConfig;
-    return new GrowthProgress(progress, fullConfig);
+    return new GrowthProgress(progress, GrowthProgress.mergeConfig(config));
   }
 
   /**
@@ -130,10 +128,17 @@ export class GrowthProgress {
    * @param config Optional custom growth configuration
    */
   static fromProgress(progress: number, config?: Partial<GrowthConfig>): GrowthProgress {
-    const fullConfig = config
-      ? { ...GrowthProgress.defaultConfig, ...config }
-      : GrowthProgress.defaultConfig;
-    return new GrowthProgress(progress, fullConfig);
+    return new GrowthProgress(progress, GrowthProgress.mergeConfig(config));
+  }
+
+  /**
+   * Merge a partial config over the defaults. omitUndefined prevents
+   * explicit-undefined fields from clobbering defaults and NaN-poisoning
+   * every phase calculation.
+   */
+  private static mergeConfig(config?: Partial<GrowthConfig>): GrowthConfig {
+    if (!config) return GrowthProgress.defaultConfig;
+    return { ...GrowthProgress.defaultConfig, ...omitUndefined(config) };
   }
 
   /**

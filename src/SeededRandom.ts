@@ -65,8 +65,11 @@ export class SeededRandom {
    * @param seed Initial seed value
    */
   constructor(seed: number) {
-    this._initialSeed = seed;
-    this._seed = seed;
+    // Non-finite seeds (NaN/Infinity) would silently collapse to one stream;
+    // normalize deterministically instead
+    const normalized = Number.isFinite(seed) ? seed : 0;
+    this._initialSeed = normalized;
+    this._seed = normalized;
   }
 
   // ==================== GETTERS ====================
@@ -105,8 +108,9 @@ export class SeededRandom {
    * Set a new seed
    */
   setSeed(seed: number): void {
-    this._seed = seed;
-    this._initialSeed = seed;
+    const normalized = Number.isFinite(seed) ? seed : 0;
+    this._seed = normalized;
+    this._initialSeed = normalized;
   }
 
   /**

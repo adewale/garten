@@ -121,6 +121,7 @@ Only `container` is required. Everything else has sensible defaults.
 | `maxHeight` | `number` | `0.35` | Max plant height (0-1). Higher values add taller plants (trees at 1.0) |
 | `density` | `string` | `'normal'` | `'sparse'` \| `'normal'` \| `'dense'` \| `'lush'` |
 | `categories` | `string[]` | all | Filter to specific plant categories |
+| `colors` | `object` | — | Color configuration (sub-options below) |
 | `colors.accent` | `string` | `'#F6821F'` | Primary accent color |
 | `colors.palette` | `string` | `'natural'` | Color palette preset |
 | `colors.accentWeight` | `number` | `0.4` | Fraction of plants using accent color (0-1) |
@@ -182,7 +183,8 @@ garden.getElapsedTime()    // Seconds elapsed
 
 ### Events
 
-Two equivalent ways to observe the garden. Constructor callbacks:
+Two equivalent ways to observe the garden. Constructor callbacks via the
+`events` option:
 
 ```typescript
 events: {

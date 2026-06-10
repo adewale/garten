@@ -253,12 +253,26 @@ describe('Constraint: fade accepts any supported hex format', () => {
 // ==================== GENERATION EVENTS (M-2) ====================
 
 describe('Constraint: generation completion events', () => {
-  it('emits every crossed generation when multiple elapse between frames', () => {
+  it('emits every crossed generation when multiple elapse in ONE frame', () => {
+    // Drive rAF by hand so we can deliver a single frame with a large
+    // timestamp jump — exactly what a suspended background tab produces
+    let rafCallback: FrameRequestCallback | null = null;
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      rafCallback = cb;
+      return 1;
+    });
+    vi.stubGlobal('cancelAnimationFrame', () => {
+      rafCallback = null;
+    });
+
     const onGenerationComplete = vi.fn();
     const { garden } = makeGarden({ events: { onGenerationComplete } });
 
+    const t0 = performance.now();
     garden.play();
-    advanceFrame(3500); // 3.5 of 10 one-second generations in a single frame
+
+    rafCallback!(t0 + 100); // one healthy tick inside generation 0
+    rafCallback!(t0 + 3600); // tab resumes 3.5s later: a single frame
 
     const reported = onGenerationComplete.mock.calls.map((c) => c[0]);
     expect(reported).toEqual([1, 2, 3]);
@@ -460,6 +474,73 @@ describe('Constraint: subscription events API', () => {
 
     expect(optionsChange).toHaveBeenCalledTimes(1);
     expect(regenerate).toHaveBeenCalledTimes(1);
+    garden.destroy();
+  });
+});
+
+// ==================== REDUCED MOTION ====================
+
+describe('Constraint: reduced motion renders a static completed garden', () => {
+  it('renders the fully grown garden without animating', () => {
+    mockMatchMedia.mockImplementationOnce((query: string) => ({
+      matches: query.includes('prefers-reduced-motion'),
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    const container = makeContainer();
+    const garden = new Garten({
+      container,
+      seed: 42,
+      duration: 10,
+      generations: 5,
+      autoplay: true, // must be ignored under reduced motion
+      respectReducedMotion: true,
+    });
+    const ctx = lastCtx!;
+
+    expect(garden.getState()).toBe('complete');
+    expect(ctx.callCount('stroke') + ctx.callCount('fill')).toBeGreaterThan(0);
+
+    // No animation frame scheduled
+    const drawsBefore = ctx.calls.length;
+    advanceFrame(500);
+    expect(ctx.calls.length).toBe(drawsBefore);
+    garden.destroy();
+  });
+});
+
+// ==================== LOOPING ====================
+
+describe('Constraint: looping restarts without completing', () => {
+  it('wraps past the end, re-fires generation events, never completes', () => {
+    const onComplete = vi.fn();
+    const generations: number[] = [];
+    const { garden } = makeGarden({
+      loop: true,
+      events: { onComplete, onGenerationComplete: (g) => generations.push(g) },
+    });
+    const complete = vi.fn();
+    garden.on('complete', complete);
+
+    garden.play();
+    // Frames fire every ~16-48ms while time advances, so the loop wraps at
+    // ~10s; land mid-generation-1 of the second pass (~1.5s in) to keep the
+    // expected event list stable
+    advanceFrame(10200);
+    advanceFrame(1300);
+
+    expect(garden.getState()).toBe('playing');
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+    // First pass reported all 10, second pass restarted from 1
+    expect(generations.slice(0, 10)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(generations.slice(10)).toEqual([1]);
     garden.destroy();
   });
 });

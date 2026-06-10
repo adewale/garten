@@ -18,6 +18,8 @@ import { applyPreset, applyTheme, createConfig, themes, presets } from './preset
 import { flowerPalettes } from './palettes';
 import { hexToRgb as utilsHexToRgb } from './utils';
 import { hexToRgb as colorHexToRgb } from './Color';
+import { getCompletedGenerations } from './plants/generator';
+import * as fc from 'fast-check';
 
 describe('Integration: SeededRandom + Vec2', () => {
   it('should generate deterministic random positions', () => {
@@ -1700,5 +1702,294 @@ describe('Constraint: hex parsing behaves identically across entry points', () =
 
   it('parses 3-digit hex', () => {
     expect(utilsHexToRgb('#fff')).toEqual({ r: 255, g: 255, b: 255 });
+  });
+});
+
+// ==================== EXHAUSTIVE CONFIG LATTICE ====================
+// densities x palettes x maxHeights is a small bounded space — test all of
+// it rather than sampling. (Climbers hid a rendering bug for several
+// releases because no default config ever reached maxHeight >= 0.5.)
+
+describe('Exhaustive: config lattice is constructible end-to-end', () => {
+  const densities = ['sparse', 'normal', 'dense', 'lush'] as const;
+  const palettes = ['natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone'] as const;
+  const maxHeights = [0.05, 0.35, 0.7, 1.0] as const;
+
+  it('every density x palette combination generates plants', () => {
+    for (const density of densities) {
+      for (const palette of palettes) {
+        const resolved = resolveOptions({
+          container: document.createElement('div'),
+          seed: 42,
+          generations: 5,
+          density,
+          colors: { palette },
+        });
+        const plants = generatePlants(resolved);
+        expect(plants.length, `${density} x ${palette}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('every density x maxHeight combination generates plants', () => {
+    for (const density of densities) {
+      for (const maxHeight of maxHeights) {
+        const resolved = resolveOptions({
+          container: document.createElement('div'),
+          seed: 42,
+          generations: 5,
+          density,
+          maxHeight,
+        });
+        const plants = generatePlants(resolved);
+        expect(plants.length, `${density} x maxHeight ${maxHeight}`).toBeGreaterThan(0);
+        for (const plant of plants) {
+          expect(plant.maxHeight).toBeLessThanOrEqual(maxHeight + 1e-9);
+        }
+      }
+    }
+  });
+});
+
+// ==================== INVALID OPTION VALUES ====================
+
+describe('Constraint: invalid enum-like options fall back instead of crashing', () => {
+  it('unknown density falls back to normal', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const resolved = resolveOptions({
+        container: document.createElement('div'),
+        seed: 42,
+        density: 'enormous' as never,
+      });
+      expect(resolved.density).toBe('normal');
+      expect(() => generatePlants(resolved)).not.toThrow();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('unknown palette falls back to natural', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const resolved = resolveOptions({
+        container: document.createElement('div'),
+        seed: 42,
+        colors: { palette: 'rainbow' as never },
+      });
+      expect(resolved.colors.palette).toBe('natural');
+      expect(() => generatePlants(resolved)).not.toThrow();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('non-array categories are ignored', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const resolved = resolveOptions({
+        container: document.createElement('div'),
+        seed: 42,
+        categories: 'rose' as never,
+      });
+      expect(resolved.categories).toBeNull();
+      expect(() => generatePlants(resolved)).not.toThrow();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('non-finite numeric timingCurve falls back to linear', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const resolved = resolveOptions({
+        container: document.createElement('div'),
+        seed: 42,
+        timingCurve: NaN,
+      });
+      expect(resolved.timingCurve).toBe('linear');
+      const plants = generatePlants(resolved);
+      for (const plant of plants) {
+        expect(Number.isFinite(plant.delay)).toBe(true);
+        expect(Number.isFinite(plant.growDuration)).toBe(true);
+      }
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+// ==================== TOTAL-FUNCTION PROPERTY ====================
+// resolveOptions is the trust boundary for all user input: for ANY shape of
+// partial options it must return a valid, finite, generatable configuration.
+
+describe('Property: resolveOptions is total over fuzzy partial options', () => {
+  const fuzzyNumber = fc.oneof(
+    fc.double(),
+    fc.integer(),
+    fc.constant(NaN),
+    fc.constant(Infinity),
+    fc.constant(-Infinity),
+    fc.constant(undefined)
+  );
+  const fuzzyColors = fc.record(
+    {
+      accent: fc.oneof(fc.constant('#F6821F'), fc.constant('#fff'), fc.constant(undefined)),
+      palette: fc.oneof(
+        fc.constantFrom('natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone'),
+        fc.string(),
+        fc.constant(undefined)
+      ),
+      flowerColors: fc.oneof(
+        fc.array(fc.constantFrom('#ff0000', '#00ff00')),
+        fc.constant(undefined)
+      ),
+      foliageColors: fc.oneof(
+        fc.array(fc.constantFrom('#112233', '#445566')),
+        fc.constant(undefined)
+      ),
+      accentWeight: fuzzyNumber,
+    },
+    { requiredKeys: [] }
+  );
+
+  const fuzzyOptions = fc.record(
+    {
+      duration: fuzzyNumber,
+      generations: fuzzyNumber,
+      maxHeight: fuzzyNumber,
+      speed: fuzzyNumber,
+      maxPixelRatio: fuzzyNumber,
+      targetFPS: fuzzyNumber,
+      opacity: fuzzyNumber,
+      fadeHeight: fuzzyNumber,
+      zIndex: fuzzyNumber,
+      seed: fuzzyNumber,
+      timingCurve: fc.oneof(
+        fc.constantFrom('linear', 'ease-out', 'ease-in', 'ease-in-out'),
+        fuzzyNumber
+      ),
+      density: fc.oneof(
+        fc.constantFrom('sparse', 'normal', 'dense', 'lush'),
+        fc.string(),
+        fc.constant(undefined)
+      ),
+      colors: fc.oneof(fuzzyColors, fc.constant(undefined)),
+    },
+    { requiredKeys: [] }
+  );
+
+  it('never throws and always yields a finite, generatable configuration', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      fc.assert(
+        fc.property(fuzzyOptions, (options) => {
+          const resolved = resolveOptions({
+            container: document.createElement('div'),
+            ...(options as object),
+          } as never);
+
+          for (const key of [
+            'duration', 'generations', 'maxHeight', 'speed', 'maxPixelRatio',
+            'targetFPS', 'opacity', 'fadeHeight', 'zIndex', 'seed',
+          ] as const) {
+            expect(Number.isFinite(resolved[key]), key).toBe(true);
+          }
+          expect(Array.isArray(resolved.colors.flowerColors)).toBe(true);
+          expect(Array.isArray(resolved.colors.foliageColors)).toBe(true);
+          expect(resolved.colors.accentWeight).toBeGreaterThanOrEqual(0);
+          expect(resolved.colors.accentWeight).toBeLessThanOrEqual(1);
+          if (typeof resolved.timingCurve === 'number') {
+            expect(Number.isFinite(resolved.timingCurve)).toBe(true);
+          }
+
+          // The resolved config must survive generation
+          const plants = generatePlants(resolved);
+          expect(plants.length).toBeGreaterThan(0);
+        }),
+        { numRuns: 150 }
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('is idempotent for already-resolved values', () => {
+    const container = document.createElement('div');
+    const once = resolveOptions({ container, seed: 42, duration: 120, generations: 9 });
+    const twice = resolveOptions({ ...once, categories: once.categories ?? undefined });
+    expect(twice.seed).toBe(once.seed);
+    expect(twice.duration).toBe(once.duration);
+    expect(twice.generations).toBe(once.generations);
+    expect(twice.colors).toEqual(once.colors);
+  });
+});
+
+// ==================== CONFIG MERGE HARDENING ====================
+
+describe('Constraint: partial-config merges ignore explicit undefined', () => {
+  it('GrowthProgress with undefined config fields matches the default config', () => {
+    const withUndefined = GrowthProgress.fromProgress(0.6, {
+      leafStart: undefined,
+      flowerStart: undefined,
+    });
+    const plain = GrowthProgress.fromProgress(0.6);
+
+    expect(Number.isFinite(withUndefined.leaf)).toBe(true);
+    expect(Number.isFinite(withUndefined.flower)).toBe(true);
+    expect(withUndefined.equals(plain)).toBe(true);
+  });
+
+  it('GrowthProgressPool sanitizes non-finite numeric config', () => {
+    const pool = new GrowthProgressPool({
+      devMode: true,
+      initialSize: NaN,
+      growthFactor: Infinity,
+      maxSize: NaN,
+    });
+    pool.beginFrame();
+    expect(() => {
+      for (let i = 0; i < 10; i++) pool.acquireAndCalculate(1, 0, 1);
+    }).not.toThrow();
+    pool.endFrame();
+    expect(pool.getStats().poolSize).toBeGreaterThan(0);
+  });
+});
+
+// ==================== GENERATION BOUNDARY MATH ====================
+
+describe('Constraint: getCompletedGenerations is the single source of boundary math', () => {
+  it('is 0 before the first boundary and N at the end', () => {
+    expect(getCompletedGenerations(0, 100, 10)).toBe(0);
+    expect(getCompletedGenerations(9.99, 100, 10)).toBe(0);
+    expect(getCompletedGenerations(10, 100, 10)).toBe(1);
+    expect(getCompletedGenerations(100, 100, 10)).toBe(10);
+    expect(getCompletedGenerations(250, 100, 10)).toBe(10); // capped
+  });
+
+  it('is monotone in time and bounded by the generation count', () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 1000, noNaN: true }),
+        fc.double({ min: 0, max: 1000, noNaN: true }),
+        fc.integer({ min: 1, max: 200 }),
+        (t1, t2, gens) => {
+          const [lo, hi] = t1 <= t2 ? [t1, t2] : [t2, t1];
+          const a = getCompletedGenerations(lo, 600, gens);
+          const b = getCompletedGenerations(hi, 600, gens);
+          expect(a).toBeLessThanOrEqual(b);
+          expect(b).toBeLessThanOrEqual(gens);
+          expect(a).toBeGreaterThanOrEqual(0);
+        }
+      ),
+      { numRuns: 200 }
+    );
+  });
+
+  it('degenerate inputs return 0', () => {
+    expect(getCompletedGenerations(NaN, 100, 10)).toBe(0);
+    expect(getCompletedGenerations(50, 0, 10)).toBe(0);
+    expect(getCompletedGenerations(50, 100, 0)).toBe(0);
+    expect(getCompletedGenerations(-5, 100, 10)).toBe(0);
   });
 });

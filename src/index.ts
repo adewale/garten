@@ -23,7 +23,7 @@ export type {
   GardenEventData,
 } from './types';
 
-export { PlantType, PlantCategory } from './types';
+export { PlantType, PlantCategory, GARDEN_EVENT_TYPES } from './types';
 
 // Utility exports (for advanced usage)
 export { seededRandom, createRandom } from './utils';

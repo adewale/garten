@@ -8,7 +8,7 @@ import type {
   ResolvedOptions,
 } from './types';
 import { resolveOptions } from './defaults';
-import { generatePlants } from './plants';
+import { generatePlants, getCompletedGenerations } from './plants';
 import { Renderer } from './Renderer';
 import { EventEmitter } from './EventEmitter';
 import { prefersReducedMotion, omitUndefined } from './utils';
@@ -158,10 +158,7 @@ export class Garten implements GardenController {
    */
   private emitGenerationEvents(): void {
     const { duration, generations } = this.options;
-    if (generations <= 0 || duration <= 0) return;
-
-    const timePerGen = duration / generations;
-    const currentGen = Math.min(generations, Math.floor(this.elapsedTime / timePerGen));
+    const currentGen = getCompletedGenerations(this.elapsedTime, duration, generations);
 
     for (let gen = Math.max(1, this.lastReportedGeneration + 1); gen <= currentGen; gen++) {
       this.options.events.onGenerationComplete?.(gen, generations);
@@ -298,13 +295,12 @@ export class Garten implements GardenController {
     this.elapsedTime = clampedTime;
 
     // Align generation tracking with the new position without firing
-    // catch-up events (guard against division by zero)
-    const timePerGen = this.options.generations > 0
-      ? this.options.duration / this.options.generations
-      : 0;
-    this.lastReportedGeneration = timePerGen > 0
-      ? Math.min(this.options.generations, Math.floor(clampedTime / timePerGen))
-      : 0;
+    // catch-up events
+    this.lastReportedGeneration = getCompletedGenerations(
+      clampedTime,
+      this.options.duration,
+      this.options.generations
+    );
 
     // Render at new position
     this.renderer.render(this.plants, clampedTime);
@@ -544,9 +540,11 @@ export class Garten implements GardenController {
 
     // Align generation tracking with the current position (no catch-up
     // events for boundaries that already passed)
-    const genDuration = this.options.duration / this.options.generations;
-    const currentGen = genDuration > 0 ? Math.floor(this.elapsedTime / genDuration) : 0;
-    this.lastReportedGeneration = Math.min(currentGen, this.options.generations);
+    this.lastReportedGeneration = getCompletedGenerations(
+      this.elapsedTime,
+      this.options.duration,
+      this.options.generations
+    );
 
     // Re-render at current position
     this.renderer.render(this.plants, this.elapsedTime);

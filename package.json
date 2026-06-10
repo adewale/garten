@@ -43,10 +43,13 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run verify",
+    "check:dist": "es-check es2018 dist/index.js dist/index.global.js && es-check es2018 dist/index.mjs --module",
+    "verify": "npm run typecheck && npm run test:run && npm run build && npm run check:dist"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^2.0.0",
+    "es-check": "^9.6.4",
     "fast-check": "^4.5.3",
     "jsdom": "^24.0.0",
     "tsup": "^8.0.0",

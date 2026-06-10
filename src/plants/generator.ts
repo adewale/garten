@@ -1,4 +1,4 @@
-import type { PlantData, ResolvedOptions, ColorOptions } from '../types';
+import type { PlantData, ResolvedOptions } from '../types';
 import { PlantType, PlantCategory } from '../types';
 import { createRandom, randomRange, applyTimingCurve } from '../utils';
 import { buildFlowerColors, buildFoliageColors } from '../palettes';
@@ -477,10 +477,12 @@ function generatePlantHeight(minH: number, maxH: number, maxHeight: number, rand
  * (A previous stride of 1000 vs 100 made plant 10+ of each generation an
  * exact visual duplicate of a plant in the following generation.)
  */
-const GEN_SEED_STRIDE = 100_000;
-const PLANT_SEED_STRIDE = 137;
+export const GEN_SEED_STRIDE = 100_000;
+export const PLANT_SEED_STRIDE = 137;
 /** Offset for the per-generation count RNG, clear of all plant streams */
-const GEN_COUNT_SEED_OFFSET = 50_000;
+export const GEN_COUNT_SEED_OFFSET = 50_000;
+/** Upper bound on RNG draws consumed per plant (headroom for new fields) */
+export const MAX_RNG_DRAWS_PER_PLANT = 64;
 
 /**
  * Generate all plants for the garden
@@ -496,9 +498,9 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
   // Pre-compute available categories once for efficiency (avoids filtering on every plant)
   const precomputedCategories = precomputeCategories(maxHeight, categoryFilter);
 
-  // Build color arrays once
-  const flowerColors = buildFlowerColors(colors as Required<ColorOptions>);
-  const foliageColors = buildFoliageColors(colors as Required<ColorOptions>);
+  // Build color arrays once (ResolvedOptions guarantees Required<ColorOptions>)
+  const flowerColors = buildFlowerColors(colors);
+  const foliageColors = buildFoliageColors(colors);
 
   // Validate color arrays are non-empty
   if (flowerColors.length === 0) {
@@ -591,31 +593,20 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
 }
 
 /**
- * Get the generation that should be active at a given time
+ * Number of generations fully completed at a given time, in [0, generations].
+ * The single source of generation-boundary math — used by Garten for
+ * generation-complete events and seek/regenerate tracking.
  */
-export function getCurrentGeneration(time: number, duration: number, generations: number): number {
-  const timePerGen = duration / generations;
-  return Math.min(generations - 1, Math.floor(time / timePerGen));
-}
-
-/**
- * Check if a generation just completed
- */
-export function didGenerationComplete(
-  prevTime: number,
-  currentTime: number,
+export function getCompletedGenerations(
+  time: number,
   duration: number,
   generations: number
-): number | null {
-  const timePerGen = duration / generations;
-  const prevGen = Math.floor(prevTime / timePerGen);
-  const currentGen = Math.floor(currentTime / timePerGen);
-
-  if (currentGen > prevGen && currentGen <= generations) {
-    return prevGen + 1;
+): number {
+  if (generations <= 0 || duration <= 0 || !Number.isFinite(time) || time <= 0) {
+    return 0;
   }
-
-  return null;
+  const timePerGen = duration / generations;
+  return Math.min(generations, Math.floor(time / timePerGen));
 }
 
 /**
