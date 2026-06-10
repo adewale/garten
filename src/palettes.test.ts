@@ -358,3 +358,50 @@ describe('buildFoliageColors - monotone', () => {
     }
   });
 });
+
+describe('Constraint: every built color is a well-formed value', () => {
+  // Added after mutation testing: mutants producing undefined entries or
+  // out-of-bounds indexing in the built color arrays survived the previous
+  // assertions (which only checked lengths and membership).
+  const hexPattern = /^#[0-9A-Fa-f]{3,8}$/;
+
+  it('flower colors are well-formed for every palette and weight', () => {
+    const palettes = ['natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone'] as const;
+    for (const palette of palettes) {
+      for (const accentWeight of [0, 0.25, 0.4, 0.6, 0.9, 1]) {
+        const colors = buildFlowerColors({
+          accent: '#F6821F',
+          palette,
+          flowerColors: [],
+          foliageColors: [],
+          accentWeight,
+        });
+        expect(colors.length).toBeGreaterThan(0);
+        for (const color of colors) {
+          expect(color, `${palette} @ ${accentWeight}`).toMatch(hexPattern);
+        }
+      }
+    }
+  });
+
+  it('custom foliage stems are darkened well-formed colors, one per leaf', () => {
+    const custom = ['#228B22', '#6B8E23', '#556B2F'];
+    const result = buildFoliageColors({
+      accent: '#F6821F',
+      palette: 'natural',
+      flowerColors: [],
+      foliageColors: custom,
+      accentWeight: 0.4,
+    });
+
+    expect(result.leaves).toEqual(custom);
+    expect(result.stems).toHaveLength(custom.length);
+    result.stems.forEach((stem, i) => {
+      expect(stem).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      // Each stem must be a strictly darker variant of its leaf
+      const lum = (hex: string) =>
+        parseInt(hex.slice(1, 3), 16) + parseInt(hex.slice(3, 5), 16) + parseInt(hex.slice(5, 7), 16);
+      expect(lum(stem)).toBeLessThan(lum(custom[i]));
+    });
+  });
+});

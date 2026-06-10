@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Garten visual test fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #garden {
+        width: 800px;
+        height: 600px;
+        position: relative;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="garden"></div>
+    <script src="../../../dist/index.global.js"></script>
+    <script>
+      // Deterministic garden factory for tests: fixed seed, no autoplay,
+      // positioned via seek() so every screenshot is a static frame.
+      window.makeGarden = function (options, seekTo) {
+        if (window.__garden) {
+          window.__garden.destroy();
+        }
+        var garden = new Garten.Garten(
+          Object.assign(
+            {
+              container: '#garden',
+              seed: 42,
+              duration: 100,
+              generations: 10,
+              autoplay: false,
+              respectReducedMotion: false,
+            },
+            options || {}
+          )
+        );
+        if (typeof seekTo === 'number') {
+          garden.seek(seekTo);
+        }
+        window.__garden = garden;
+        return true;
+      };
+    </script>
+  </body>
+</html>

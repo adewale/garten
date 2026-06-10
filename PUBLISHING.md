@@ -34,6 +34,7 @@ npm login
 npm run build
 
 # Dry run to see what will be published
+# (prepublishOnly runs `npm run verify`: typecheck + tests + build + dist syntax gate)
 npm publish --dry-run
 
 # Publish to npm
@@ -49,6 +50,10 @@ npm publish
 - [ ] LICENSE file exists
 - [ ] README.md is complete
 - [ ] package.json has correct version, repository, homepage
+- [ ] CHANGELOG.md has an entry for this exact version (enforced by `src/docs-sync.test.ts`)
+- [ ] Git tag created and pushed (`npm version` creates it; `git push --follow-tags`).
+      History note: 1.0.1-1.0.3 were bumped without tags, and 1.0.3 was bumped
+      without publishing - npm's latest stayed at 1.0.2. Tag + publish together.
 
 ## 4. After Publishing
 

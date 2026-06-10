@@ -130,12 +130,25 @@ export function generateMonotoneFoliageColors(accent: string): { leaves: string[
 }
 
 /**
- * Build flower color array with accent weighting
+ * Cap on accent repetitions relative to the base palette size.
+ * Keeps the weighted array bounded; accent fractions above ~0.9 saturate.
+ */
+const MAX_ACCENT_RATIO = 9;
+
+/**
+ * Build flower color array with accent weighting.
+ *
+ * Every base palette color is always included; the accent proportion is
+ * achieved by repeating accent variants alongside them. (A previous
+ * implementation truncated the tail of the base palette instead, which made
+ * some documented palette colors unreachable.)
  */
 export function buildFlowerColors(options: Required<ColorOptions>): string[] {
-  // Use custom colors if provided
-  if (options.flowerColors.length > 0) {
-    return options.flowerColors;
+  // Use custom colors if provided (defensive ?? [] — merges from theme
+  // helpers have historically produced explicit undefined here)
+  const customFlowers = options.flowerColors ?? [];
+  if (customFlowers.length > 0) {
+    return customFlowers;
   }
 
   // Grayscale ignores accent entirely - pure achromatic
@@ -148,27 +161,30 @@ export function buildFlowerColors(options: Required<ColorOptions>): string[] {
     return generateMonotoneFlowerColors(options.accent);
   }
 
-  // Standard palettes mix base colors with accent variants
+  // Standard palettes mix all base colors with weighted accent variants
   const baseColors = flowerPalettes[options.palette];
+  const weight = Math.min(1, Math.max(0, options.accentWeight ?? 0));
+
+  if (weight <= 0) {
+    return [...baseColors];
+  }
+
   const accentVariants = generateAccentVariants(options.accent);
+  if (weight >= 1) {
+    return [...accentVariants];
+  }
 
-  // Calculate how many accent colors to include based on weight
-  const totalColors = baseColors.length + accentVariants.length;
-  const accentCount = Math.round(totalColors * options.accentWeight);
-  const baseCount = totalColors - accentCount;
+  // accentCount / (accentCount + baseColors.length) ≈ weight
+  const accentCount = Math.min(
+    baseColors.length * MAX_ACCENT_RATIO,
+    Math.max(1, Math.round((baseColors.length * weight) / (1 - weight)))
+  );
 
-  // Build weighted array
   const result: string[] = [];
-
-  // Add accent colors (repeated based on weight)
   for (let i = 0; i < accentCount; i++) {
     result.push(accentVariants[i % accentVariants.length]);
   }
-
-  // Add base palette colors
-  for (let i = 0; i < baseCount; i++) {
-    result.push(baseColors[i % baseColors.length]);
-  }
+  result.push(...baseColors);
 
   return result;
 }
@@ -179,11 +195,13 @@ export function buildFlowerColors(options: Required<ColorOptions>): string[] {
 export function buildFoliageColors(
   options: Required<ColorOptions>
 ): { leaves: string[]; stems: string[] } {
-  if (options.foliageColors.length > 0) {
+  // Defensive ?? [] — see buildFlowerColors
+  const customFoliage = options.foliageColors ?? [];
+  if (customFoliage.length > 0) {
     // Use custom colors for both
     return {
-      leaves: options.foliageColors,
-      stems: options.foliageColors.map((c) => darkenColor(c, 0.2)),
+      leaves: customFoliage,
+      stems: customFoliage.map((c) => darkenColor(c, 0.2)),
     };
   }
 

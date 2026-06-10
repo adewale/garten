@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly mutation-testing run (Mondays 06:00 UTC)
+    - cron: '0 6 * * 1'
+
+jobs:
+  verify:
+    name: Typecheck, tests, build, dist syntax gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # typecheck + vitest (948 tests incl. exhaustive render sweep,
+      # doc-sync, invariants) + build + es-check dist syntax gate
+      - run: npm run verify
+
+  browser:
+    name: Real-pixel and canvas-contract tests (Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # builds the IIFE bundle, then runs tests/visual (pixel probes +
+      # Linux-Chromium goldens) and tests/contract (strict-mock contract)
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+  mutation:
+    name: Mutation testing (core boundary)
+    # Too slow for every push: weekly + on demand. The es-check gate and
+    # the vitest suite remain the per-commit gates.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run test:mutation:core
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 30

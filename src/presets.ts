@@ -5,6 +5,7 @@
 
 import type { GardenOptions, GardenPreset, GardenTheme, ColorOptions, Density } from './types';
 import { COLORS } from './constants';
+import { omitUndefined } from './utils';
 
 // ==================== THEMES ====================
 
@@ -338,12 +339,17 @@ export function applyTheme(
     themeConfig = themes.natural;
   }
 
+  // omitUndefined: themes only define a subset of color fields. Spreading
+  // explicit `undefined` values would later clobber resolveOptions defaults
+  // (this exact bug crashed 6 of 11 built-in themes in <= 1.0.3).
   const colors: ColorOptions = {
-    palette: themeConfig.palette,
-    accent: themeConfig.accent,
-    flowerColors: themeConfig.flowerColors,
-    foliageColors: themeConfig.foliageColors,
-    ...options.colors,
+    ...omitUndefined({
+      palette: themeConfig.palette,
+      accent: themeConfig.accent,
+      flowerColors: themeConfig.flowerColors,
+      foliageColors: themeConfig.foliageColors,
+    }),
+    ...omitUndefined(options.colors),
   };
 
   return {
@@ -373,8 +379,8 @@ export function applyPreset(
   // Deep merge colors to preserve sub-properties
   const mergedColors = (presetConfig.options.colors || options.colors)
     ? {
-        ...presetConfig.options.colors,
-        ...options.colors,
+        ...omitUndefined(presetConfig.options.colors),
+        ...omitUndefined(options.colors),
       }
     : undefined;
 
@@ -402,8 +408,8 @@ export function createConfig(
   // Deep merge colors to preserve sub-properties
   const mergedColors = (themedOptions.colors || options.colors)
     ? {
-        ...themedOptions.colors,
-        ...options.colors,
+        ...omitUndefined(themedOptions.colors),
+        ...omitUndefined(options.colors),
       }
     : undefined;
 

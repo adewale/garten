@@ -1,6 +1,6 @@
 {
   "name": "garten",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "Animated canvas garden that grows over time. Zero dependencies.",
   "author": "Ade Oshineye",
   "license": "MIT",
@@ -31,7 +31,6 @@
       }
     }
   },
-  "browser": "dist/index.global.js",
   "files": [
     "dist"
   ],
@@ -44,10 +43,21 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run verify",
+    "check:dist": "es-check es2018 dist/index.js dist/index.global.js && es-check es2018 dist/index.mjs --module",
+    "verify": "npm run typecheck && npm run test:run && npm run build && npm run check:dist",
+    "test:e2e": "npm run build && playwright test",
+    "test:visual": "playwright test --project=visual",
+    "test:contract": "playwright test --project=contract",
+    "test:mutation": "stryker run",
+    "test:mutation:core": "stryker run --mutate \"src/defaults.ts,src/palettes.ts,src/GrowthProgress.ts,src/plants/generator.ts\""
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@vitest/coverage-v8": "^2.0.0",
+    "es-check": "^9.6.4",
     "fast-check": "^4.5.3",
     "jsdom": "^24.0.0",
     "tsup": "^8.0.0",

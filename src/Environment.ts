@@ -182,16 +182,19 @@ export class Environment {
 
   /**
    * Check if reduced motion is preferred
+   * Always queries fresh — the user can toggle this preference at any time,
+   * so the cached `detect()` snapshot must not be used here.
    */
   static prefersReducedMotion(): boolean {
-    return this.detect().prefersReducedMotion;
+    return this.checkReducedMotion();
   }
 
   /**
    * Check if dark mode is preferred
+   * Always queries fresh — the user can toggle this preference at any time.
    */
   static prefersDarkMode(): boolean {
-    return this.detect().prefersDarkMode;
+    return this.checkDarkMode();
   }
 
   /**

@@ -5,6 +5,7 @@
  */
 
 import { GROWTH_PHASES } from './constants';
+import { omitUndefined } from './utils';
 
 /**
  * Growth phases data structure
@@ -70,11 +71,14 @@ export class GrowthProgress {
   private readonly _flower: number;
   private readonly _foliage: number;
   private readonly _plume: number;
+  /** Retained so clone() reproduces config-customized instances */
+  private readonly _config: GrowthConfig;
 
   private constructor(
     progress: number,
     config: GrowthConfig = GrowthProgress.defaultConfig
   ) {
+    this._config = config;
     this._progress = Math.max(0, Math.min(1, progress));
 
     // Calculate growth phases
@@ -115,10 +119,7 @@ export class GrowthProgress {
     config?: Partial<GrowthConfig>
   ): GrowthProgress {
     const progress = (time - delay) / duration;
-    const fullConfig = config
-      ? { ...GrowthProgress.defaultConfig, ...config }
-      : GrowthProgress.defaultConfig;
-    return new GrowthProgress(progress, fullConfig);
+    return new GrowthProgress(progress, GrowthProgress.mergeConfig(config));
   }
 
   /**
@@ -127,10 +128,17 @@ export class GrowthProgress {
    * @param config Optional custom growth configuration
    */
   static fromProgress(progress: number, config?: Partial<GrowthConfig>): GrowthProgress {
-    const fullConfig = config
-      ? { ...GrowthProgress.defaultConfig, ...config }
-      : GrowthProgress.defaultConfig;
-    return new GrowthProgress(progress, fullConfig);
+    return new GrowthProgress(progress, GrowthProgress.mergeConfig(config));
+  }
+
+  /**
+   * Merge a partial config over the defaults. omitUndefined prevents
+   * explicit-undefined fields from clobbering defaults and NaN-poisoning
+   * every phase calculation.
+   */
+  private static mergeConfig(config?: Partial<GrowthConfig>): GrowthConfig {
+    if (!config) return GrowthProgress.defaultConfig;
+    return { ...GrowthProgress.defaultConfig, ...omitUndefined(config) };
   }
 
   /**
@@ -341,10 +349,10 @@ export class GrowthProgress {
   }
 
   /**
-   * Clone this growth progress
+   * Clone this growth progress (preserves any custom growth configuration)
    */
   clone(): GrowthProgress {
-    return GrowthProgress.fromProgress(this._progress);
+    return new GrowthProgress(this._progress, this._config);
   }
 
   /**
@@ -366,8 +374,12 @@ export function calculateGrowthPhases(
   delay: number,
   growDuration: number
 ): GrowthPhases | null {
-  const progress = (time - delay) / growDuration;
-  if (progress <= 0) return null;
+  const rawProgress = (time - delay) / growDuration;
+  if (rawProgress <= 0) return null;
+
+  // Clamp like GrowthProgress/MutableGrowthProgress so all three growth
+  // calculators agree on fully-grown plants
+  const progress = Math.min(1, rawProgress);
 
   return {
     progress,

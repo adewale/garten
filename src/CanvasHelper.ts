@@ -594,8 +594,16 @@ export class CanvasHelper {
 // ==================== STANDALONE HELPER FUNCTIONS ====================
 
 /**
- * Draw a curved stem and return the end position
- * Standalone function for backward compatibility
+ * Reusable output object for the standalone drawStem (avoids per-call
+ * allocation in the render hot path)
+ * WARNING: Only valid until the next drawStem call — do not store references
+ */
+const _standaloneStemResult = { x: 0, y: 0 };
+
+/**
+ * Draw a curved stem and return the end position.
+ * This is the single shared implementation used by all plant renderers.
+ * Returns a shared object — callers must consume `.x`/`.y` before the next call.
  */
 export function drawStem(
   ctx: Ctx,
@@ -627,7 +635,9 @@ export function drawStem(
   ctx.lineCap = CANVAS_STYLE.LINE_CAP;
   ctx.stroke();
 
-  return { x: endX, y: endY };
+  _standaloneStemResult.x = endX;
+  _standaloneStemResult.y = endY;
+  return _standaloneStemResult;
 }
 
 /**

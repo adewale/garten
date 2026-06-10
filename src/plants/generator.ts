@@ -1,4 +1,4 @@
-import type { PlantData, ResolvedOptions, ColorOptions } from '../types';
+import type { PlantData, ResolvedOptions } from '../types';
 import { PlantType, PlantCategory } from '../types';
 import { createRandom, randomRange, applyTimingCurve } from '../utils';
 import { buildFlowerColors, buildFoliageColors } from '../palettes';
@@ -469,8 +469,23 @@ function generatePlantHeight(minH: number, maxH: number, maxHeight: number, rand
 }
 
 /**
+ * Seed-derivation strides.
+ *
+ * The generation stride must exceed the largest per-plant offset
+ * (max 30 plants/gen x PLANT_SEED_STRIDE = 4,110) plus the per-plant RNG
+ * draw count, so no two plants in the garden can ever share an RNG stream.
+ * (A previous stride of 1000 vs 100 made plant 10+ of each generation an
+ * exact visual duplicate of a plant in the following generation.)
+ */
+export const GEN_SEED_STRIDE = 100_000;
+export const PLANT_SEED_STRIDE = 137;
+/** Offset for the per-generation count RNG, clear of all plant streams */
+export const GEN_COUNT_SEED_OFFSET = 50_000;
+/** Upper bound on RNG draws consumed per plant (headroom for new fields) */
+export const MAX_RNG_DRAWS_PER_PLANT = 64;
+
+/**
  * Generate all plants for the garden
- * Optimized for memory efficiency with pre-allocated array
  */
 export function generatePlants(options: ResolvedOptions): PlantData[] {
   const { duration, generations, maxHeight, density, seed, colors, timingCurve, categories } = options;
@@ -483,9 +498,9 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
   // Pre-compute available categories once for efficiency (avoids filtering on every plant)
   const precomputedCategories = precomputeCategories(maxHeight, categoryFilter);
 
-  // Build color arrays once
-  const flowerColors = buildFlowerColors(colors as Required<ColorOptions>);
-  const foliageColors = buildFoliageColors(colors as Required<ColorOptions>);
+  // Build color arrays once (ResolvedOptions guarantees Required<ColorOptions>)
+  const flowerColors = buildFlowerColors(colors);
+  const foliageColors = buildFoliageColors(colors);
 
   // Validate color arrays are non-empty
   if (flowerColors.length === 0) {
@@ -495,14 +510,9 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
     throw new Error('Garten: No foliage colors available. Check palette configuration.');
   }
 
-  // Estimate total plants for pre-allocation (reduces memory fragmentation)
-  const avgPlantsPerGen = (minPlantsPerGen + maxPlantsPerGen) / 2;
-  const estimatedTotal = Math.ceil(generations * avgPlantsPerGen * 1.1);
   const plants: PlantData[] = [];
-  plants.length = estimatedTotal; // Pre-allocate
 
   let plantId = 0;
-  let actualCount = 0;
 
   for (let gen = 0; gen < generations; gen++) {
     // Apply timing curve to warp generation start times
@@ -511,13 +521,14 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
     const genDelay = warpedStart * duration;
     const genDuration = (warpedEnd - warpedStart) * duration;
 
-    const genRand = createRandom(seed + gen * 1000);
+    const genRand = createRandom(seed + gen * GEN_SEED_STRIDE + GEN_COUNT_SEED_OFFSET);
 
     // Number of plants in this generation
     const plantsInGen = Math.floor(randomRange(minPlantsPerGen, maxPlantsPerGen + 1, genRand));
 
     for (let p = 0; p < plantsInGen; p++) {
-      const plantRand = createRandom(seed + gen * 1000 + p * 100);
+      const plantSeed = seed + gen * GEN_SEED_STRIDE + p * PLANT_SEED_STRIDE;
+      const plantRand = createRandom(plantSeed);
 
       // Select plant type using pre-computed category weights
       const type = selectPlantType(plantRand, precomputedCategories);
@@ -553,7 +564,7 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
       const category = plantTypeToCategory.get(type) ?? PlantCategory.SimpleFlower;
       const variation = getPlantVariation(type);
 
-      plants[actualCount++] = {
+      plants.push({
         id: plantId++,
         type,
         x,
@@ -563,52 +574,39 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
         leafColor: foliageColors.leaves[leafColorIdx],
         delay,
         growDuration,
-        seed: seed + gen * 1000 + p * 100,
+        seed: plantSeed,
         petals,
         lean,
         scale,
         generation: gen,
         category,
         variation,
-      };
+      });
     }
   }
 
-  // Trim array to actual size
-  plants.length = actualCount;
-
-  // Sort by height for proper layering (shorter plants in front)
-  plants.sort((a, b) => a.maxHeight - b.maxHeight);
+  // Painter's algorithm: draw tallest first so shorter plants render on top
+  // and stay visible in the foreground
+  plants.sort((a, b) => b.maxHeight - a.maxHeight);
 
   return plants;
 }
 
 /**
- * Get the generation that should be active at a given time
+ * Number of generations fully completed at a given time, in [0, generations].
+ * The single source of generation-boundary math — used by Garten for
+ * generation-complete events and seek/regenerate tracking.
  */
-export function getCurrentGeneration(time: number, duration: number, generations: number): number {
-  const timePerGen = duration / generations;
-  return Math.min(generations - 1, Math.floor(time / timePerGen));
-}
-
-/**
- * Check if a generation just completed
- */
-export function didGenerationComplete(
-  prevTime: number,
-  currentTime: number,
+export function getCompletedGenerations(
+  time: number,
   duration: number,
   generations: number
-): number | null {
-  const timePerGen = duration / generations;
-  const prevGen = Math.floor(prevTime / timePerGen);
-  const currentGen = Math.floor(currentTime / timePerGen);
-
-  if (currentGen > prevGen && currentGen <= generations) {
-    return prevGen + 1;
+): number {
+  if (generations <= 0 || duration <= 0 || !Number.isFinite(time) || time <= 0) {
+    return 0;
   }
-
-  return null;
+  const timePerGen = duration / generations;
+  return Math.min(generations, Math.floor(time / timePerGen));
 }
 
 /**

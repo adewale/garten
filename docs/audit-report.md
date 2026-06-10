@@ -1,3 +1,7 @@
+> **Superseded.** This report describes the pre-1.0 codebase (101 plant
+> types); its recommendations were implemented in 1.0.x. For the current
+> audit see [`audit-report-2026-06.md`](audit-report-2026-06.md).
+
 # Garten Codebase Audit Report
 
 ## Executive Summary

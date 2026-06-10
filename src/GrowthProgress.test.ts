@@ -236,3 +236,131 @@ describe('calculateRawProgress', () => {
     expect(calculateRawProgress(300, 100, 100)).toBe(1);
   });
 });
+
+describe('Constraint: clone preserves custom growth configuration', () => {
+  it('clone() of a config-customized instance equals the original', () => {
+    const custom = { leafStart: 0.1, flowerStart: 0.2, flowerRate: 3 };
+    const original = GrowthProgress.fromProgress(0.4, custom);
+    const cloned = original.clone();
+    expect(cloned.equals(original)).toBe(true);
+    expect(cloned.flower).toBe(original.flower);
+    expect(cloned.leaf).toBe(original.leaf);
+  });
+});
+
+describe('Constraint: easing functions are well-behaved', () => {
+  // Mutation testing showed entire easing case bodies could be emptied
+  // without any test noticing. Pin the mathematical contract instead of
+  // individual outputs.
+  const easings = ['linear', 'ease-in', 'ease-out', 'ease-in-out'] as const;
+
+  it.each(easings)('%s maps 0->0, 1->1, and is monotone', (easing) => {
+    expect(GrowthProgress.fromProgress(0).eased(easing)).toBeCloseTo(0, 10);
+    expect(GrowthProgress.fromProgress(1).eased(easing)).toBeCloseTo(1, 10);
+
+    let previous = -Infinity;
+    for (let t = 0; t <= 1.0001; t += 0.05) {
+      const value = GrowthProgress.fromProgress(Math.min(1, t)).eased(easing);
+      expect(value).toBeGreaterThanOrEqual(previous - 1e-12);
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(1);
+      previous = value;
+    }
+  });
+
+  it('ease-in lags linear and ease-out leads linear at midphase', () => {
+    const mid = GrowthProgress.fromProgress(0.3);
+    expect(mid.eased('ease-in')).toBeLessThan(mid.eased('linear'));
+    expect(mid.eased('ease-out')).toBeGreaterThan(mid.eased('linear'));
+  });
+
+  it('easedStem/easedFlower apply the easing to the phase value, not raw progress', () => {
+    const g = GrowthProgress.fromProgress(0.4); // stem = min(1, 0.4*1.5) = 0.6
+    expect(g.easedStem('linear')).toBeCloseTo(g.stem, 10);
+    expect(g.easedStem('ease-in')).toBeCloseTo(g.stem * g.stem, 10);
+    expect(g.easedFlower('linear')).toBeCloseTo(g.flower, 10);
+    expect(g.easedStem('ease-out')).toBeCloseTo(g.stem * (2 - g.stem), 10);
+    expect(g.easedStem('ease-in-out')).toBeCloseTo(
+      g.stem < 0.5 ? 2 * g.stem * g.stem : -1 + (4 - 2 * g.stem) * g.stem,
+      10
+    );
+  });
+});
+
+describe('Constraint: range and phase helpers honor exact boundaries', () => {
+  it('isInRange is min-inclusive, max-exclusive', () => {
+    const g = GrowthProgress.fromProgress(0.5);
+    expect(g.isInRange(0.5, 0.6)).toBe(true);
+    expect(g.isInRange(0.4, 0.5)).toBe(false);
+    expect(g.isInRange(0.49, 0.51)).toBe(true);
+  });
+
+  it('getPhaseProgress saturates at the phase edges', () => {
+    const g = GrowthProgress.fromProgress(0.5);
+    expect(g.getPhaseProgress(0.5, 0.8)).toBe(0); // at start
+    expect(g.getPhaseProgress(0.2, 0.5)).toBe(1); // at end
+    expect(g.getPhaseProgress(0.25, 0.75)).toBeCloseTo(0.5, 10);
+    expect(g.getPhaseProgress(0.6, 0.9)).toBe(0); // before start
+    expect(g.getPhaseProgress(0.1, 0.4)).toBe(1); // after end
+  });
+
+  it('plume is zero at exactly PLUME_START and positive just above', () => {
+    expect(GrowthProgress.fromProgress(0.8).plume).toBe(0);
+    expect(GrowthProgress.fromProgress(0.81).plume).toBeGreaterThan(0);
+    expect(GrowthProgress.fromProgress(1).plume).toBeCloseTo(1, 10);
+  });
+});
+
+describe('Constraint: equality is sensitive to every derivable field', () => {
+  // Pairs that differ in exactly one phase value, so a mutant deleting any
+  // single comparison clause flips the result
+  const base = GrowthProgress.fromProgress(0.6);
+
+  const variants: Array<[string, GrowthProgress]> = [
+    ['progress', GrowthProgress.fromProgress(0.61)],
+    ['stem only', GrowthProgress.fromProgress(0.6, { stemRate: 1.2 })],
+    ['leaf only', GrowthProgress.fromProgress(0.6, { leafStart: 0.2 })],
+    ['flower only', GrowthProgress.fromProgress(0.6, { flowerStart: 0.4 })],
+  ];
+
+  it.each(variants)('equals() detects a difference in %s', (_label, other) => {
+    expect(base.equals(other)).toBe(false);
+    expect(other.equals(other.clone())).toBe(true);
+  });
+
+  it.each(variants)('approximatelyEquals() detects a difference in %s', (_label, other) => {
+    expect(base.approximatelyEquals(other, 1e-9)).toBe(false);
+    expect(other.approximatelyEquals(other.clone(), 1e-9)).toBe(true);
+  });
+
+  it('approximatelyEquals honors its epsilon', () => {
+    const a = GrowthProgress.fromProgress(0.5);
+    const b = GrowthProgress.fromProgress(0.500001);
+    expect(a.approximatelyEquals(b, 0.01)).toBe(true);
+    expect(a.approximatelyEquals(b, 1e-9)).toBe(false);
+  });
+});
+
+describe('Constraint: legacy calculateGrowthPhases clamps like the class', () => {
+  it('clamps progress to 1 beyond the grow duration', () => {
+    const result = calculateGrowthPhases(1000, 0, 100); // 10x overshoot
+    expect(result).not.toBeNull();
+    expect(result!.progress).toBe(1);
+  });
+
+  it('returns null at exactly time === delay (progress 0 is not yet active)', () => {
+    expect(calculateGrowthPhases(100, 100, 200)).toBeNull();
+    expect(calculateGrowthPhases(100.001, 100, 200)).not.toBeNull();
+  });
+
+  it('matches GrowthProgress.calculate for the same inputs', () => {
+    for (const time of [10, 50, 150, 500]) {
+      const legacy = calculateGrowthPhases(time, 0, 100)!;
+      const modern = GrowthProgress.calculate(time, 0, 100);
+      expect(legacy.progress).toBeCloseTo(modern.progress, 10);
+      expect(legacy.stem).toBeCloseTo(modern.stem, 10);
+      expect(legacy.leaf).toBeCloseTo(modern.leaf, 10);
+      expect(legacy.flower).toBeCloseTo(modern.flower, 10);
+    }
+  });
+});

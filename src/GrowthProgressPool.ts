@@ -28,8 +28,10 @@ import { GrowthConfig, GrowthProgress } from './GrowthProgress';
 
 const DEFAULT_INITIAL_SIZE = 1024;
 const DEFAULT_GROWTH_FACTOR = 2;
-const DEFAULT_MAX_SIZE_WARNING = 8192;
-const DEFAULT_MAX_SIZE = 16384;
+const DEFAULT_MAX_SIZE_WARNING = 16384;
+// Must cover the worst legal configuration: OPTION_BOUNDS.GENERATIONS.max
+// (1000) x PLANTS_PER_GENERATION.lush max (30) = 30,000 concurrent plants.
+const DEFAULT_MAX_SIZE = 32768;
 const DEFAULT_SHRINK_THRESHOLD = 0.25;
 const DEFAULT_FRAME_HISTORY_SIZE = 60;
 const DEFAULT_LOW_USAGE_FRAMES_BEFORE_SHRINK = 10;
@@ -257,9 +259,16 @@ export class GrowthProgressPool {
   private readonly maxHistorySize: number = DEFAULT_FRAME_HISTORY_SIZE;
 
   constructor(config: GrowthProgressPoolConfig = {}) {
-    // Clamp config values to safe bounds
+    // Sanitize and clamp config values to safe bounds. Non-finite values
+    // (NaN/Infinity) fall back to defaults — Math.min/max would propagate
+    // NaN and `new Array(NaN)` throws.
+    const sane = (value: number | undefined, fallback: number, min: number, max: number): number => {
+      const candidate = typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+      return Math.max(min, Math.min(max, candidate));
+    };
+
     // Minimum of 1 for sizes (allow small values for testing), max 1M for performance scenarios
-    this.initialSize = Math.max(1, Math.min(1000000, config.initialSize ?? DEFAULT_INITIAL_SIZE));
+    this.initialSize = sane(config.initialSize, DEFAULT_INITIAL_SIZE, 1, 1000000);
 
     // Default devMode: true in non-production environments
     let defaultDevMode = false;
@@ -269,12 +278,17 @@ export class GrowthProgressPool {
     this.devMode = config.devMode ?? defaultDevMode;
     this.strictMode = config.strictMode ?? this.devMode;
 
-    // Clamp growthFactor to prevent infinite loops (must be > 1) or excessive growth
-    this.growthFactor = Math.max(1.1, Math.min(4, config.growthFactor ?? DEFAULT_GROWTH_FACTOR));
-    this.maxSizeWarning = Math.max(1, Math.min(1000000, config.maxSizeWarning ?? DEFAULT_MAX_SIZE_WARNING));
-    this.maxSize = Math.max(1, Math.min(1000000, config.maxSize ?? DEFAULT_MAX_SIZE));
-    this.shrinkThreshold = Math.max(0.01, Math.min(0.99, config.shrinkThreshold ?? DEFAULT_SHRINK_THRESHOLD));
-    this.lowUsageFramesBeforeShrink = Math.max(1, Math.min(10000, config.lowUsageFramesBeforeShrink ?? DEFAULT_LOW_USAGE_FRAMES_BEFORE_SHRINK));
+    // growthFactor must be > 1 to prevent infinite grow loops
+    this.growthFactor = sane(config.growthFactor, DEFAULT_GROWTH_FACTOR, 1.1, 4);
+    this.maxSizeWarning = sane(config.maxSizeWarning, DEFAULT_MAX_SIZE_WARNING, 1, 1000000);
+    this.maxSize = sane(config.maxSize, DEFAULT_MAX_SIZE, 1, 1000000);
+    this.shrinkThreshold = sane(config.shrinkThreshold, DEFAULT_SHRINK_THRESHOLD, 0.01, 0.99);
+    this.lowUsageFramesBeforeShrink = sane(
+      config.lowUsageFramesBeforeShrink,
+      DEFAULT_LOW_USAGE_FRAMES_BEFORE_SHRINK,
+      1,
+      10000
+    );
 
     // Pre-allocate frame history ring buffer
     this.frameHistory = new Array(this.maxHistorySize);

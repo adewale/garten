@@ -8,8 +8,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run build      # Build ESM, CJS, and IIFE bundles with tsup
 npm run dev        # Watch mode for development
 npm run typecheck  # Type check without emitting
+npm run test:run   # Run the test suite once
+npm run verify     # typecheck + tests + build + dist syntax gate (pre-publish)
+npm run test:e2e   # Real-pixel + canvas-contract tests in Chromium (needs `npx playwright install chromium`)
+npm run test:mutation:core  # Stryker mutation testing on the core boundary files (slow; not part of verify)
 npm run clean      # Remove dist directory
 ```
+
+Testing conventions and the boundary-coverage approach are documented in
+`TESTING.md` — read it before adding or modifying tests.
 
 ## Architecture
 
@@ -33,7 +40,7 @@ This is a TypeScript canvas animation library that renders an animated garden wi
 
 - **`src/utils.ts`** - Utility functions and re-exports from `SeededRandom.ts` (`createRandom`, `seededRandom`).
 
-- **`src/Color.ts`** - Color manipulation value object (`fromHex`, `lighten`, `darken`, `mix`, etc.).
+- **`src/Color.ts`** - Color manipulation value object (`fromHex`, `lighten`, `darken`, `mix`, etc.). The single hex-parsing implementation; `utils.ts` re-exports it.
 
 - **`src/Vec2.ts`** - 2D vector value object for spatial calculations.
 
@@ -41,11 +48,11 @@ This is a TypeScript canvas animation library that renders an animated garden wi
 
 - **`src/GrowthProgressPool.ts`** - Object pool for zero-allocation growth calculations during rendering.
 
-- **`src/SeededRandom.ts`** - Seeded pseudo-random number generator for deterministic plant generation.
+- **`src/SeededRandom.ts`** - Seeded pseudo-random number generator (splitmix32-style integer hash; deterministic across JS engines).
 
-- **`src/CanvasHelper.ts`** - Fluent API for canvas drawing operations (stems, leaves).
+- **`src/CanvasHelper.ts`** - Fluent API for canvas drawing operations. Also hosts the single canonical `drawStem`/`drawLeaf` implementations used by all plant renderers (re-exported from `plants/renderers.ts`).
 
-- **`src/EventEmitter.ts`** - Type-safe event emitter for garden lifecycle events.
+- **`src/EventEmitter.ts`** - Type-safe event emitter. Wired into `Garten`, which exposes `on()/once()/off()` and emits all `GardenEventType` events alongside the legacy `options.events` callbacks.
 
 - **`src/Environment.ts`** - Browser capability detection (`prefersReducedMotion`, `getPixelRatio`, etc.).
 
@@ -65,7 +72,10 @@ This is a TypeScript canvas animation library that renders an animated garden wi
 
 - Options use a `ResolvedOptions` pattern - user-facing `GardenOptions` with optional fields are normalized to `ResolvedOptions` with all required fields
 - Plant rendering is time-based: each plant's visibility/growth state is calculated from elapsed time, not stored as mutable state
-- Seeded RNG (`createRandom()`) enables deterministic gardens when `seed` option is provided
+- Seeded RNG (`createRandom()`) enables deterministic gardens when `seed` option is provided (integer-hash based, so results match across browsers)
+- Canvas background is transparent by default; the `background` option fills a solid color
+- Plants are sorted tallest-first so shorter plants draw later and stay visible in front (painter's algorithm)
+- Per-plant RNG seeds are derived with non-overlapping strides (`GEN_SEED_STRIDE`/`PLANT_SEED_STRIDE` in `generator.ts`) so no two plants share a random stream
 
 ### Plant Type Architecture
 
@@ -85,5 +95,4 @@ The `timingCurve` option controls how time is distributed across generations. Im
 
 - Category-based rendering with O(1) lookup via local `categoryRenderers` Record in `src/plants/renderers.ts`
 - `variationOverrides` Map (in `src/plants/variations.ts`) built at module load for instant variation lookup
-- Pre-allocated arrays in `generatePlants()` to reduce memory fragmentation
 - `plantTypeToCategory` Map for O(1) type-to-category resolution

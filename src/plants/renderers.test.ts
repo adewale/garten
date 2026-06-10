@@ -11,7 +11,10 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { drawStem, drawLeaf } from './renderers';
+import { drawStem, drawLeaf, drawPlant } from './renderers';
+import { PlantType } from '../types';
+import type { PlantData } from '../types';
+import { GrowthProgressPool } from '../GrowthProgressPool';
 
 // Mock canvas context
 function createMockContext(): CanvasRenderingContext2D {
@@ -338,5 +341,106 @@ describe('Bezier control point calculations', () => {
 
     // CP2 should be at ~70% height
     expect(cp2y).toBeCloseTo(y - height * 0.7, 1);
+  });
+});
+
+describe('Path integrity', () => {
+  // Canvas keeps a single "current path"; any beginPath() while another
+  // shape is mid-construction silently discards it. These tests verify
+  // that multi-segment plants stroke their complete path.
+
+  interface PathOp {
+    method: string;
+    args: number[];
+  }
+
+  function createPathTrackingContext() {
+    let currentPath: PathOp[] = [];
+    const strokedPaths: PathOp[][] = [];
+
+    const pathOp =
+      (method: string) =>
+      (...args: number[]) => {
+        currentPath.push({ method, args });
+      };
+
+    const ctx = {
+      beginPath: vi.fn(() => {
+        currentPath = [];
+      }),
+      moveTo: pathOp('moveTo'),
+      lineTo: pathOp('lineTo'),
+      quadraticCurveTo: pathOp('quadraticCurveTo'),
+      bezierCurveTo: pathOp('bezierCurveTo'),
+      arc: pathOp('arc'),
+      ellipse: pathOp('ellipse'),
+      closePath: pathOp('closePath'),
+      stroke: vi.fn(() => {
+        strokedPaths.push([...currentPath]);
+      }),
+      fill: vi.fn(),
+      save: vi.fn(),
+      restore: vi.fn(),
+      translate: vi.fn(),
+      rotate: vi.fn(),
+      strokeStyle: '',
+      fillStyle: '',
+      lineWidth: 1,
+      lineCap: 'butt' as CanvasLineCap,
+      globalAlpha: 1,
+      strokedPaths,
+    } as unknown as CanvasRenderingContext2D & { strokedPaths: PathOp[][] };
+
+    return ctx;
+  }
+
+  function makeClimberPlant(): PlantData {
+    return {
+      id: 0,
+      type: PlantType.Vine,
+      x: 0.5,
+      maxHeight: 0.8,
+      flowerColor: '#ff0000',
+      stemColor: '#00ff00',
+      leafColor: '#0000ff',
+      delay: 0,
+      growDuration: 1,
+      seed: 42,
+      petals: 5,
+      lean: 0.1,
+      scale: 1,
+      generation: 0,
+    };
+  }
+
+  it('strokes the complete climber vine as one uninterrupted path', () => {
+    const ctx = createPathTrackingContext();
+    const pool = new GrowthProgressPool({ devMode: false });
+    const width = 1000;
+    const height = 500;
+
+    pool.beginFrame();
+    drawPlant(ctx, makeClimberPlant(), width, height, 1, pool);
+    pool.endFrame();
+
+    // The vine is the stroked path that starts at the plant base
+    const baseX = 0.5 * width;
+    const vinePath = ctx.strokedPaths.find(
+      (path) =>
+        path.length > 0 &&
+        path[0].method === 'moveTo' &&
+        path[0].args[0] === baseX &&
+        path[0].args[1] === height
+    );
+
+    expect(vinePath, 'no stroked path begins at the vine base').toBeDefined();
+
+    // All 8 vine segments must be present in the stroked path
+    const segments = vinePath!.filter((op) => op.method === 'quadraticCurveTo');
+    expect(segments.length).toBe(8);
+
+    // The vine path must not be contaminated by leaf geometry
+    const leafOps = vinePath!.filter((op) => op.method === 'bezierCurveTo');
+    expect(leafOps.length).toBe(0);
   });
 });
