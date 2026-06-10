@@ -14,7 +14,10 @@ import { GrowthProgressPool } from './GrowthProgressPool';
 import { resolveOptions } from './defaults';
 import { buildFlowerColors, buildFoliageColors } from './palettes';
 import { generatePlants } from './plants/generator';
-import { applyPreset, createConfig } from './presets';
+import { applyPreset, applyTheme, createConfig, themes, presets } from './presets';
+import { flowerPalettes } from './palettes';
+import { hexToRgb as utilsHexToRgb } from './utils';
+import { hexToRgb as colorHexToRgb } from './Color';
 
 describe('Integration: SeededRandom + Vec2', () => {
   it('should generate deterministic random positions', () => {
@@ -1475,5 +1478,227 @@ describe('Constraint: Growth duration minimum enforcement', () => {
         resolved.duration + 0.01 // Small tolerance for floating point
       );
     }
+  });
+});
+
+// ==================== CONFIGURATION CONSTRUCTIBILITY ====================
+// Every shipped theme/preset must produce options that survive the full
+// resolve -> generate pipeline. Guards against undefined-clobbering merges.
+
+describe('Constraint: every built-in theme and preset is constructible', () => {
+  it('generates plants for every theme', () => {
+    for (const name of Object.keys(themes)) {
+      const container = document.createElement('div');
+      const themed = applyTheme(name, { container, seed: 42, generations: 5 });
+      const resolved = resolveOptions(themed as never);
+      const plants = generatePlants(resolved);
+      expect(plants.length, `theme "${name}"`).toBeGreaterThan(0);
+    }
+  });
+
+  it('generates plants for every preset', () => {
+    for (const name of Object.keys(presets)) {
+      const container = document.createElement('div');
+      const preset = applyPreset(name, { container, seed: 42 });
+      const resolved = resolveOptions(preset as never);
+      const plants = generatePlants(resolved);
+      expect(plants.length, `preset "${name}"`).toBeGreaterThan(0);
+    }
+  });
+
+  it('generates plants for every preset x theme combination', () => {
+    for (const presetName of Object.keys(presets)) {
+      for (const themeName of Object.keys(themes)) {
+        const container = document.createElement('div');
+        const combined = createConfig(presetName, themeName, { container, seed: 42 });
+        const resolved = resolveOptions(combined as never);
+        const plants = generatePlants(resolved);
+        expect(plants.length, `${presetName} + ${themeName}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('treats explicit undefined color fields like absent fields', () => {
+    const resolved = resolveOptions({
+      container: document.createElement('div'),
+      seed: 42,
+      colors: {
+        accent: undefined,
+        flowerColors: undefined,
+        foliageColors: undefined,
+        palette: undefined,
+        accentWeight: undefined,
+      },
+    });
+
+    expect(resolved.colors.flowerColors).toEqual([]);
+    expect(resolved.colors.foliageColors).toEqual([]);
+    expect(typeof resolved.colors.accent).toBe('string');
+    expect(() => generatePlants(resolved)).not.toThrow();
+  });
+
+  it('createTheme output without optional fields is constructible', () => {
+    const minimal = applyTheme(
+      { name: 'Minimal', palette: 'cool' },
+      { container: document.createElement('div'), seed: 7 }
+    );
+    const resolved = resolveOptions(minimal as never);
+    expect(() => generatePlants(resolved)).not.toThrow();
+  });
+});
+
+// ==================== SEED UNIQUENESS ====================
+
+describe('Constraint: plant seeds are unique within a garden', () => {
+  it('never reuses a per-plant seed across generations', () => {
+    for (const density of ['normal', 'dense', 'lush'] as const) {
+      const resolved = resolveOptions({
+        container: document.createElement('div'),
+        seed: 42,
+        generations: 20,
+        duration: 60,
+        density,
+      });
+      const plants = generatePlants(resolved);
+      const seeds = new Set(plants.map((p) => p.seed));
+      expect(seeds.size, `density "${density}"`).toBe(plants.length);
+    }
+  });
+
+  it('does not place visually identical plants at the same x position', () => {
+    const resolved = resolveOptions({
+      container: document.createElement('div'),
+      seed: 42,
+      generations: 10,
+      duration: 60,
+      density: 'lush',
+    });
+    const plants = generatePlants(resolved);
+    const signatures = new Set(plants.map((p) => `${p.x}:${p.type}:${p.flowerColor}`));
+    expect(signatures.size).toBe(plants.length);
+  });
+});
+
+// ==================== PAINTER'S ORDERING ====================
+
+describe('Constraint: painter ordering puts shorter plants in front', () => {
+  it('sorts plants tallest-first so later (shorter) draws overlay them', () => {
+    const resolved = resolveOptions({
+      container: document.createElement('div'),
+      seed: 42,
+      generations: 5,
+      duration: 60,
+    });
+    const plants = generatePlants(resolved);
+    for (let i = 1; i < plants.length; i++) {
+      expect(plants[i].maxHeight).toBeLessThanOrEqual(plants[i - 1].maxHeight);
+    }
+  });
+});
+
+// ==================== OPTION SANITIZATION ====================
+
+describe('Constraint: non-finite numeric options fall back to defaults', () => {
+  const numericKeys = [
+    'duration',
+    'generations',
+    'maxHeight',
+    'speed',
+    'maxPixelRatio',
+    'targetFPS',
+    'opacity',
+    'fadeHeight',
+    'zIndex',
+  ] as const;
+
+  it.each(numericKeys)('sanitizes %s', (key) => {
+    for (const bad of [NaN, Infinity, -Infinity]) {
+      const resolved = resolveOptions({
+        container: document.createElement('div'),
+        seed: 42,
+        [key]: bad,
+      } as never);
+      const value = resolved[key] as number;
+      expect(Number.isFinite(value), `${key} = ${bad}`).toBe(true);
+    }
+  });
+
+  it('sanitizes a NaN seed to a random finite seed', () => {
+    const resolved = resolveOptions({
+      container: document.createElement('div'),
+      seed: NaN,
+    });
+    expect(Number.isFinite(resolved.seed)).toBe(true);
+  });
+
+  it('keeps negative seeds distinct instead of clamping them all to zero', () => {
+    const container = document.createElement('div');
+    const a = resolveOptions({ container, seed: -5 });
+    const b = resolveOptions({ container, seed: 0 });
+    const c = resolveOptions({ container, seed: -6 });
+    expect(a.seed).not.toBe(b.seed);
+    expect(a.seed).not.toBe(c.seed);
+  });
+
+  it('clamps accentWeight into [0, 1]', () => {
+    const container = document.createElement('div');
+    const high = resolveOptions({ container, colors: { accentWeight: 5 } });
+    const low = resolveOptions({ container, colors: { accentWeight: -1 } });
+    const bad = resolveOptions({ container, colors: { accentWeight: NaN } });
+    expect(high.colors.accentWeight).toBeLessThanOrEqual(1);
+    expect(low.colors.accentWeight).toBeGreaterThanOrEqual(0);
+    expect(Number.isFinite(bad.colors.accentWeight)).toBe(true);
+  });
+});
+
+// ==================== PALETTE REACHABILITY ====================
+
+describe('Constraint: every palette color is reachable', () => {
+  it('includes all base palette colors at moderate accent weights', () => {
+    for (const palette of ['natural', 'warm', 'cool', 'vibrant'] as const) {
+      for (const accentWeight of [0, 0.2, 0.4, 0.6]) {
+        const colors = buildFlowerColors({
+          accent: '#F6821F',
+          palette,
+          flowerColors: [],
+          foliageColors: [],
+          accentWeight,
+        });
+        for (const base of flowerPalettes[palette]) {
+          expect(colors, `${palette} @ ${accentWeight} missing ${base}`).toContain(base);
+        }
+      }
+    }
+  });
+
+  it('keeps the accent proportion close to accentWeight', () => {
+    const accent = '#F6821F';
+    for (const accentWeight of [0.2, 0.4, 0.6]) {
+      const colors = buildFlowerColors({
+        accent,
+        palette: 'natural',
+        flowerColors: [],
+        foliageColors: [],
+        accentWeight,
+      });
+      const baseSet = new Set(flowerPalettes.natural);
+      const accentCount = colors.filter((c) => !baseSet.has(c)).length;
+      expect(Math.abs(accentCount / colors.length - accentWeight)).toBeLessThan(0.15);
+    }
+  });
+});
+
+// ==================== COLOR UTILITY PARITY ====================
+
+describe('Constraint: hex parsing behaves identically across entry points', () => {
+  it('utils.hexToRgb and Color.hexToRgb agree on 3/6/8-digit and invalid input', () => {
+    const cases = ['#fff', '#ffffff', '#F6821F', '#11223344', 'fff', '#xyz', '', '#12'];
+    for (const hex of cases) {
+      expect(utilsHexToRgb(hex), `input "${hex}"`).toEqual(colorHexToRgb(hex));
+    }
+  });
+
+  it('parses 3-digit hex', () => {
+    expect(utilsHexToRgb('#fff')).toEqual({ r: 255, g: 255, b: 255 });
   });
 });

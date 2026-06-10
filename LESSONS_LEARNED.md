@@ -1,6 +1,6 @@
 # Lessons Learned
 
-Hard-won lessons from building and auditing Garten, a TypeScript canvas animation library rendering 147 plant types at 60fps.
+Hard-won lessons from building and auditing Garten, a TypeScript canvas animation library rendering 147 plant types at a configurable frame rate (default 30fps).
 
 ---
 

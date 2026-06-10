@@ -236,3 +236,33 @@ describe('calculateRawProgress', () => {
     expect(calculateRawProgress(300, 100, 100)).toBe(1);
   });
 });
+
+describe('Constraint: clone preserves custom growth configuration', () => {
+  it('clone() of a config-customized instance equals the original', () => {
+    const custom = { leafStart: 0.1, flowerStart: 0.2, flowerRate: 3 };
+    const original = GrowthProgress.fromProgress(0.4, custom);
+    const cloned = original.clone();
+    expect(cloned.equals(original)).toBe(true);
+    expect(cloned.flower).toBe(original.flower);
+    expect(cloned.leaf).toBe(original.leaf);
+  });
+});
+
+describe('Constraint: legacy calculateGrowthPhases clamps like the class', () => {
+  it('clamps progress to 1 beyond the grow duration', () => {
+    const result = calculateGrowthPhases(1000, 0, 100); // 10x overshoot
+    expect(result).not.toBeNull();
+    expect(result!.progress).toBe(1);
+  });
+
+  it('matches GrowthProgress.calculate for the same inputs', () => {
+    for (const time of [10, 50, 150, 500]) {
+      const legacy = calculateGrowthPhases(time, 0, 100)!;
+      const modern = GrowthProgress.calculate(time, 0, 100);
+      expect(legacy.progress).toBeCloseTo(modern.progress, 10);
+      expect(legacy.stem).toBeCloseTo(modern.stem, 10);
+      expect(legacy.leaf).toBeCloseTo(modern.leaf, 10);
+      expect(legacy.flower).toBeCloseTo(modern.flower, 10);
+    }
+  });
+});

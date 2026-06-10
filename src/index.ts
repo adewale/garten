@@ -63,7 +63,7 @@ export {
   createPreset,
 } from './presets';
 
-// Constants (for advanced customization)
+// Constants (read-only reference values used by the renderers)
 export * from './constants';
 
 // Default export for convenience

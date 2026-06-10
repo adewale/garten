@@ -426,6 +426,13 @@ export interface GardenOptions {
   timingCurve?: TimingCurve;
 
   /**
+   * Canvas background. Any CSS color, or 'transparent' to let the page
+   * show through (recommended for overlay/background usage)
+   * @default 'transparent'
+   */
+  background?: string;
+
+  /**
    * CSS z-index for the canvas element
    * Use negative values to place behind content
    * @default -1
@@ -502,6 +509,7 @@ export interface ResolvedOptions {
   maxPixelRatio: number;
   targetFPS: number;
   timingCurve: TimingCurve;
+  background: string;
   zIndex: number;
   opacity: number;
   fadeHeight: number;
@@ -542,6 +550,30 @@ export interface GardenController {
 
   /** Force regenerate all plants */
   regenerate(): void;
+
+  /**
+   * Subscribe to a lifecycle event
+   * @returns Unsubscribe function
+   */
+  on<K extends GardenEventType>(
+    event: K,
+    handler: (data: GardenEventData[K]) => void
+  ): () => void;
+
+  /**
+   * Subscribe to a lifecycle event for one occurrence only
+   * @returns Unsubscribe function
+   */
+  once<K extends GardenEventType>(
+    event: K,
+    handler: (data: GardenEventData[K]) => void
+  ): () => void;
+
+  /** Unsubscribe a handler from a lifecycle event */
+  off<K extends GardenEventType>(
+    event: K,
+    handler: (data: GardenEventData[K]) => void
+  ): void;
 
   /** Clean up and remove from DOM */
   destroy(): void;

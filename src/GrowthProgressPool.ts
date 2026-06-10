@@ -28,8 +28,10 @@ import { GrowthConfig, GrowthProgress } from './GrowthProgress';
 
 const DEFAULT_INITIAL_SIZE = 1024;
 const DEFAULT_GROWTH_FACTOR = 2;
-const DEFAULT_MAX_SIZE_WARNING = 8192;
-const DEFAULT_MAX_SIZE = 16384;
+const DEFAULT_MAX_SIZE_WARNING = 16384;
+// Must cover the worst legal configuration: OPTION_BOUNDS.GENERATIONS.max
+// (1000) x PLANTS_PER_GENERATION.lush max (30) = 30,000 concurrent plants.
+const DEFAULT_MAX_SIZE = 32768;
 const DEFAULT_SHRINK_THRESHOLD = 0.25;
 const DEFAULT_FRAME_HISTORY_SIZE = 60;
 const DEFAULT_LOW_USAGE_FRAMES_BEFORE_SHRINK = 10;

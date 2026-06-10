@@ -1,5 +1,6 @@
 import type { GardenOptions, ResolvedOptions, ColorOptions, GardenEvents, Density } from './types';
 import { OPTION_BOUNDS, PLANTS_PER_GENERATION, COLORS, ANIMATION, LAYOUT } from './constants';
+import { omitUndefined } from './utils';
 
 // Type declaration for process (Node.js environment detection for dev warnings)
 declare const process: { env?: { NODE_ENV?: string } } | undefined;
@@ -21,9 +22,11 @@ export const defaultColorOptions: Required<ColorOptions> = {
 export const defaultEvents: GardenEvents = {};
 
 /**
- * Default garden options
+ * Default garden options.
+ * `seed` is intentionally absent: a fresh random seed is generated per
+ * resolveOptions() call, never shared at module load time.
  */
-export const defaultOptions: Omit<ResolvedOptions, 'container'> = {
+export const defaultOptions: Omit<ResolvedOptions, 'container' | 'seed'> = {
   duration: ANIMATION.DEFAULT_DURATION,
   generations: ANIMATION.DEFAULT_GENERATIONS,
   maxHeight: LAYOUT.DEFAULT_MAX_HEIGHT,
@@ -34,10 +37,10 @@ export const defaultOptions: Omit<ResolvedOptions, 'container'> = {
   speed: 1,
   autoplay: true,
   respectReducedMotion: true,
-  seed: Math.random() * 100000,
   maxPixelRatio: ANIMATION.DEFAULT_MAX_PIXEL_RATIO,
   targetFPS: ANIMATION.DEFAULT_TARGET_FPS,
   timingCurve: 'linear',
+  background: COLORS.CANVAS_BACKGROUND,
   zIndex: -1,
   opacity: 1,
   fadeHeight: 0,
@@ -64,13 +67,34 @@ const optionToBoundsKey: Record<string, BoundsKey> = {
 };
 
 /**
- * Clamp a number to bounds from constants
+ * Resolve a numeric option: non-numbers and non-finite values (NaN,
+ * ±Infinity) fall back to the default, finite values are clamped to bounds.
  */
-function clampOption(value: number, key: string): number {
+function resolveNumber(value: number | undefined, defaultValue: number, key: string): number {
+  const candidate =
+    typeof value === 'number' && Number.isFinite(value) ? value : defaultValue;
   const boundsKey = optionToBoundsKey[key];
-  if (!boundsKey) return value;
+  if (!boundsKey) return candidate;
   const { min, max } = OPTION_BOUNDS[boundsKey];
-  return Math.min(max, Math.max(min, value));
+  return Math.min(max, Math.max(min, candidate));
+}
+
+/**
+ * Normalize a seed into [0, SEED.max). Unlike plain clamping this keeps
+ * negative and out-of-range seeds distinct from each other.
+ */
+function normalizeSeed(seed: number): number {
+  const { max } = OPTION_BOUNDS.SEED;
+  return ((seed % max) + max) % max;
+}
+
+/**
+ * Clamp a fraction to [0, 1], falling back to a default for non-finite input
+ */
+function clampFraction(value: number | undefined, defaultValue: number): number {
+  const candidate =
+    typeof value === 'number' && Number.isFinite(value) ? value : defaultValue;
+  return Math.min(1, Math.max(0, candidate));
 }
 
 /**
@@ -97,6 +121,12 @@ export function resolveOptions(options: GardenOptions): ResolvedOptions {
   // Resolve container with selector validation
   let container: HTMLElement;
   if (typeof options.container === 'string') {
+    if (typeof document === 'undefined') {
+      throw new Error(
+        'Garten: document is not available. Garten requires a browser environment ' +
+        'when the container is given as a selector string.'
+      );
+    }
     // Validate selector format to prevent unusual selectors
     if (!isValidSelector(options.container)) {
       throw new Error(`Garten: Invalid selector format "${options.container}". Use simple selectors like "#id" or ".class".`);
@@ -117,46 +147,52 @@ export function resolveOptions(options: GardenOptions): ResolvedOptions {
     }
   }
 
-  // Merge color options
-  const colors: Required<ColorOptions> = {
+  // Merge color options. omitUndefined prevents explicit-undefined fields
+  // (e.g. from theme helpers) from clobbering the defaults.
+  const mergedColors: Required<ColorOptions> = {
     ...defaultColorOptions,
-    ...options.colors,
+    ...omitUndefined(options.colors),
+  };
+  const colors: Required<ColorOptions> = {
+    ...mergedColors,
+    flowerColors: Array.isArray(mergedColors.flowerColors) ? mergedColors.flowerColors : [],
+    foliageColors: Array.isArray(mergedColors.foliageColors) ? mergedColors.foliageColors : [],
+    accentWeight: clampFraction(mergedColors.accentWeight, defaultColorOptions.accentWeight),
   };
 
   // Merge events
   const events: GardenEvents = {
     ...defaultEvents,
-    ...options.events,
+    ...omitUndefined(options.events),
   };
 
-  // Resolve and clamp numeric options
+  // Resolve, sanitize, and clamp numeric options
   return {
     container,
-    duration: clampOption(options.duration ?? defaultOptions.duration, 'duration'),
-    generations: clampOption(options.generations ?? defaultOptions.generations, 'generations'),
-    maxHeight: clampOption(options.maxHeight ?? defaultOptions.maxHeight, 'maxHeight'),
+    duration: resolveNumber(options.duration, defaultOptions.duration, 'duration'),
+    generations: resolveNumber(options.generations, defaultOptions.generations, 'generations'),
+    maxHeight: resolveNumber(options.maxHeight, defaultOptions.maxHeight, 'maxHeight'),
     colors,
     density: options.density ?? defaultOptions.density,
     categories: options.categories ?? defaultOptions.categories,
     loop: options.loop ?? defaultOptions.loop,
-    speed: clampOption(options.speed ?? defaultOptions.speed, 'speed'),
+    speed: resolveNumber(options.speed, defaultOptions.speed, 'speed'),
     autoplay: options.autoplay ?? defaultOptions.autoplay,
     respectReducedMotion: options.respectReducedMotion ?? defaultOptions.respectReducedMotion,
-    seed: clampOption(
-      // Use provided seed if valid, otherwise generate random seed
+    seed: normalizeSeed(
+      // Use provided seed if finite, otherwise generate a random one
       (typeof options.seed === 'number' && Number.isFinite(options.seed))
         ? options.seed
-        : Math.random() * 100000,
-      'seed'
+        : Math.random() * 100000
     ),
-    maxPixelRatio: clampOption(options.maxPixelRatio ?? defaultOptions.maxPixelRatio, 'maxPixelRatio'),
-    targetFPS: clampOption(options.targetFPS ?? defaultOptions.targetFPS, 'targetFPS'),
+    maxPixelRatio: resolveNumber(options.maxPixelRatio, defaultOptions.maxPixelRatio, 'maxPixelRatio'),
+    targetFPS: resolveNumber(options.targetFPS, defaultOptions.targetFPS, 'targetFPS'),
     timingCurve: options.timingCurve ?? defaultOptions.timingCurve,
-    zIndex: clampOption(options.zIndex ?? defaultOptions.zIndex, 'zIndex'),
-    opacity: clampOption(options.opacity ?? defaultOptions.opacity, 'opacity'),
-    fadeHeight: clampOption(options.fadeHeight ?? defaultOptions.fadeHeight, 'fadeHeight'),
+    background: typeof options.background === 'string' ? options.background : defaultOptions.background,
+    zIndex: resolveNumber(options.zIndex, defaultOptions.zIndex, 'zIndex'),
+    opacity: resolveNumber(options.opacity, defaultOptions.opacity, 'opacity'),
+    fadeHeight: resolveNumber(options.fadeHeight, defaultOptions.fadeHeight, 'fadeHeight'),
     fadeColor: options.fadeColor ?? defaultOptions.fadeColor,
     events,
   };
 }
-

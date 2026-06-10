@@ -36,6 +36,19 @@ Check these common issues:
 
 4. **Canvas is behind content** - The canvas uses `z-index: -1`. Ensure your container has `position: relative` or the canvas may be hidden.
 
+### Does Garten work on dark or colored pages?
+
+Yes. The canvas background is transparent by default, so the garden draws
+directly over whatever is behind it. If you want the canvas to paint its own
+background, set the `background` option to any CSS color:
+
+```javascript
+new Garten({ container: '#garden', background: '#0b1020' });
+```
+
+If you use `fadeHeight`, set `fadeColor` to match your page background so the
+fade blends correctly.
+
 ### Can I use Garten with React/Vue/Svelte?
 
 Yes. Garten is framework-agnostic. Use a ref to get the container element:

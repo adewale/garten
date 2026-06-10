@@ -2,9 +2,15 @@ import type { PlantData, PlantVariation } from '../types';
 import { PlantType, PlantCategory } from '../types';
 import { seededRandom } from '../utils';
 import { SeededRandom } from '../SeededRandom';
+import { COLORS } from '../constants';
+import { drawStem, drawLeaf } from '../CanvasHelper';
 import { getPlantCategory } from './generator';
 import { getPlantVariation } from './variations';
 import { GrowthProgressPool, MutableGrowthProgress, getDefaultPool } from '../GrowthProgressPool';
+
+// Single shared stem/leaf implementations live in CanvasHelper.
+// Re-exported here for backward compatibility with existing imports.
+export { drawStem, drawLeaf } from '../CanvasHelper';
 
 /**
  * Reusable SeededRandom instance for tall plant renderers.
@@ -81,79 +87,6 @@ function createFloweringContext(
 
 
 /**
- * Reusable output object for drawStem to avoid per-call allocation
- * WARNING: Only valid until the next drawStem call — do not store references
- */
-const _stemResult = { x: 0, y: 0 };
-
-/**
- * Draw a curved stem and return the end position
- * Returns a shared object — callers must consume values before the next call
- */
-export function drawStem(
-  ctx: Ctx,
-  x: number,
-  y: number,
-  height: number,
-  thickness: number,
-  color: string,
-  lean: number,
-  growth: number
-): { x: number; y: number } | null {
-  if (growth <= 0) return null;
-
-  const h = height * Math.min(1, growth);
-
-  ctx.beginPath();
-  ctx.moveTo(x, y);
-
-  // Control points for natural curve
-  const cp1x = x + lean * h * 0.3;
-  const cp1y = y - h * 0.4;
-  const cp2x = x + lean * h * 0.6;
-  const cp2y = y - h * 0.7;
-  const endX = x + lean * h;
-  const endY = y - h;
-
-  ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, endX, endY);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = thickness;
-  ctx.lineCap = 'round';
-  ctx.stroke();
-
-  _stemResult.x = endX;
-  _stemResult.y = endY;
-  return _stemResult;
-}
-
-/**
- * Draw a leaf shape
- */
-export function drawLeaf(
-  ctx: Ctx,
-  x: number,
-  y: number,
-  angle: number,
-  size: number,
-  color: string
-): void {
-  if (size < 1) return;
-
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(angle);
-
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.bezierCurveTo(size * 0.3, -size * 0.15, size * 0.7, -size * 0.15, size, 0);
-  ctx.bezierCurveTo(size * 0.7, size * 0.15, size * 0.3, size * 0.15, 0, 0);
-  ctx.fillStyle = color;
-  ctx.fill();
-
-  ctx.restore();
-}
-
-/**
  * Draw a simple flower with petals
  */
 function drawSimpleFlower(
@@ -187,7 +120,7 @@ function drawSimpleFlower(
   // Center
   ctx.beginPath();
   ctx.arc(x, y, s * 0.25, 0, Math.PI * 2);
-  ctx.fillStyle = '#FFD700';
+  ctx.fillStyle = COLORS.FLOWER_CENTER_GOLD;
   ctx.fill();
 }
 
@@ -220,7 +153,7 @@ function drawTulip(
     ctx.beginPath();
     ctx.moveTo(x, y - s * 0.2);
     ctx.lineTo(x, y - s * 0.9);
-    ctx.strokeStyle = '#FFFFFF';
+    ctx.strokeStyle = COLORS.TULIP_STRIPE;
     ctx.lineWidth = s * 0.08;
     ctx.stroke();
     ctx.globalAlpha = 1;
@@ -260,7 +193,7 @@ function drawDaisy(
   // Yellow center
   ctx.beginPath();
   ctx.arc(x, y, s * 0.22, 0, Math.PI * 2);
-  ctx.fillStyle = '#FFD700';
+  ctx.fillStyle = COLORS.FLOWER_CENTER_GOLD;
   ctx.fill();
 }
 
@@ -348,7 +281,7 @@ function drawGrass(
 
       ctx.beginPath();
       ctx.ellipse(plumeX, plumeY - h * 0.1, h * 0.08, h * 0.15, 0, 0, Math.PI * 2);
-      ctx.fillStyle = '#F5F5DC';
+      ctx.fillStyle = COLORS.GRASS_PLUME;
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -493,7 +426,7 @@ function drawRose(
   // Center
   ctx.beginPath();
   ctx.arc(x, y, s * 0.15, 0, Math.PI * 2);
-  ctx.fillStyle = '#FFD700';
+  ctx.fillStyle = COLORS.FLOWER_CENTER_GOLD;
   ctx.fill();
 }
 
@@ -532,7 +465,7 @@ function drawLily(
   // Stamens
   ctx.beginPath();
   ctx.arc(x, y, s * 0.12, 0, Math.PI * 2);
-  ctx.fillStyle = '#8B4513';
+  ctx.fillStyle = COLORS.LILY_STAMENS;
   ctx.fill();
 }
 
@@ -582,7 +515,7 @@ function drawOrchid(
   // Lip (labellum) - distinctive orchid feature
   ctx.beginPath();
   ctx.ellipse(x, y + s * 0.3, s * 0.25, s * 0.15, 0, 0, Math.PI * 2);
-  ctx.fillStyle = '#FFD700';
+  ctx.fillStyle = COLORS.FLOWER_CENTER_GOLD;
   ctx.fill();
 }
 
@@ -642,7 +575,7 @@ function drawLavender(
   ctx.beginPath();
   ctx.moveTo(x, y);
   ctx.quadraticCurveTo(x + lean * h * 0.5, y - h * 0.5, x + lean * h, y - h);
-  ctx.strokeStyle = '#4A7C40';
+  ctx.strokeStyle = COLORS.LAVENDER_STEM;
   ctx.lineWidth = 1.5 * variation.thicknessMultiplier;
   ctx.stroke();
 
@@ -701,7 +634,7 @@ function drawPoppy(
   // Dark center
   ctx.beginPath();
   ctx.arc(x, y, s * 0.2, 0, Math.PI * 2);
-  ctx.fillStyle = '#2D2D2D';
+  ctx.fillStyle = COLORS.FLOWER_CENTER_DARK;
   ctx.fill();
 }
 
@@ -740,13 +673,13 @@ function drawSunflower(
   // Dark center disc
   ctx.beginPath();
   ctx.arc(x, y, s * 0.35, 0, Math.PI * 2);
-  ctx.fillStyle = '#4A3728';
+  ctx.fillStyle = COLORS.SUNFLOWER_CENTER;
   ctx.fill();
 
   // Seeds pattern in center
   ctx.beginPath();
   ctx.arc(x, y, s * 0.25, 0, Math.PI * 2);
-  ctx.fillStyle = '#3D2D20';
+  ctx.fillStyle = COLORS.SUNFLOWER_CENTER_INNER;
   ctx.fill();
 }
 
@@ -837,7 +770,7 @@ function drawPeony(
   // Golden center
   ctx.beginPath();
   ctx.arc(x, y, s * 0.12, 0, Math.PI * 2);
-  ctx.fillStyle = '#FFD700';
+  ctx.fillStyle = COLORS.FLOWER_CENTER_GOLD;
   ctx.fill();
 }
 
@@ -936,7 +869,7 @@ function drawDahlia(
   // Tight center
   ctx.beginPath();
   ctx.arc(x, y, s * 0.08, 0, Math.PI * 2);
-  ctx.fillStyle = '#DAA520';
+  ctx.fillStyle = COLORS.DAHLIA_CENTER;
   ctx.fill();
 }
 
@@ -1360,7 +1293,9 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
 
     _tallPlantRng.setSeed(plant.seed);
 
-    // Draw winding main vine
+    // Pass 1: build and stroke the complete winding vine.
+    // drawLeaf() calls beginPath(), which would discard an in-progress path,
+    // so the vine must be fully stroked before any leaves are drawn.
     ctx.strokeStyle = plant.stemColor;
     ctx.lineWidth = 2 * plant.scale * variation.thicknessMultiplier;
     ctx.lineCap = 'round';
@@ -1385,8 +1320,21 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
         targetY
       );
 
-      // Draw leaves
+      prevX = targetX;
+      prevY = targetY;
+    }
+
+    ctx.stroke();
+
+    // Pass 2: draw leaves along the (now stroked) vine. Positions are
+    // recomputed deterministically — no RNG draws, so pass 1's stream
+    // is unaffected.
+    for (let i = 1; i <= segments; i++) {
+      const t = i / segments;
       if (t > 0.1 && stemGrowth > t) {
+        const targetY = baseY - plantHeight * t * stemGrowth;
+        const wave = Math.sin(t * Math.PI * 3) * 15 * variation.leanMultiplier;
+        const targetX = x + wave + plant.lean * plantHeight * t * 0.3;
         const leafSize = 12 * plant.scale * Math.min(1, (stemGrowth - t) * 3);
         if (i % 2 === 0) {
           drawLeaf(ctx, targetX - 5, targetY, -0.8, leafSize, plant.leafColor);
@@ -1394,12 +1342,7 @@ const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
           drawLeaf(ctx, targetX + 5, targetY, 0.8, leafSize, plant.leafColor);
         }
       }
-
-      prevX = targetX;
-      prevY = targetY;
     }
-
-    ctx.stroke();
 
     // Draw flowers for flowering vines
     if (stemGrowth > 0.6 && variation.complexity > 0.6) {

@@ -70,11 +70,14 @@ export class GrowthProgress {
   private readonly _flower: number;
   private readonly _foliage: number;
   private readonly _plume: number;
+  /** Retained so clone() reproduces config-customized instances */
+  private readonly _config: GrowthConfig;
 
   private constructor(
     progress: number,
     config: GrowthConfig = GrowthProgress.defaultConfig
   ) {
+    this._config = config;
     this._progress = Math.max(0, Math.min(1, progress));
 
     // Calculate growth phases
@@ -341,10 +344,10 @@ export class GrowthProgress {
   }
 
   /**
-   * Clone this growth progress
+   * Clone this growth progress (preserves any custom growth configuration)
    */
   clone(): GrowthProgress {
-    return GrowthProgress.fromProgress(this._progress);
+    return new GrowthProgress(this._progress, this._config);
   }
 
   /**
@@ -366,8 +369,12 @@ export function calculateGrowthPhases(
   delay: number,
   growDuration: number
 ): GrowthPhases | null {
-  const progress = (time - delay) / growDuration;
-  if (progress <= 0) return null;
+  const rawProgress = (time - delay) / growDuration;
+  if (rawProgress <= 0) return null;
+
+  // Clamp like GrowthProgress/MutableGrowthProgress so all three growth
+  // calculators agree on fully-grown plants
+  const progress = Math.min(1, rawProgress);
 
   return {
     progress,

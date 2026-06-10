@@ -1,6 +1,7 @@
 import type { PlantData, ResolvedOptions } from './types';
 import { drawPlant } from './plants';
 import { getPixelRatio, debounce, hexToRgb, DebouncedFunction } from './utils';
+import { ANIMATION, COLORS } from './constants';
 import { GrowthProgressPool } from './GrowthProgressPool';
 
 /**
@@ -18,6 +19,11 @@ export class Renderer {
   private width: number = 0;
   private height: number = 0;
   private pool: GrowthProgressPool;
+
+  // Last rendered frame, kept so resize (which wipes the canvas bitmap)
+  // can restore the picture even when the animation is not playing
+  private lastPlants: PlantData[] | null = null;
+  private lastTime: number = 0;
 
   // Cached fade gradient state (avoid re-creating gradient + strings every frame)
   private fadeGradientCache: {
@@ -90,7 +96,7 @@ export class Renderer {
    * Setup resize observer for responsive sizing
    */
   private setupResizeObserver(): void {
-    this.debouncedResize = debounce(() => this.resize(), 100);
+    this.debouncedResize = debounce(() => this.resize(), ANIMATION.RESIZE_DEBOUNCE_MS);
 
     if (typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver(this.debouncedResize);
@@ -103,19 +109,24 @@ export class Renderer {
   }
 
   /**
-   * Handle resize
+   * Handle resize.
+   * Note: assigning canvas.width/height wipes the bitmap, so the last
+   * rendered frame is restored afterwards — otherwise a resize while
+   * paused/complete would leave the garden blank.
    */
   resize(): void {
     this.dpr = getPixelRatio(this.options.maxPixelRatio);
 
     const rect = this.container.getBoundingClientRect();
-    this.width = rect.width;
-    this.height = rect.height;
 
-    // Guard against zero dimensions (container hidden or detached)
-    if (this.width <= 0 || this.height <= 0) {
+    // Guard against zero dimensions (container hidden or detached):
+    // keep the previous dimensions and bitmap untouched
+    if (rect.width <= 0 || rect.height <= 0) {
       return;
     }
+
+    this.width = rect.width;
+    this.height = rect.height;
 
     this.canvas.width = this.width * this.dpr;
     this.canvas.height = this.height * this.dpr;
@@ -123,13 +134,24 @@ export class Renderer {
     // Reset transform and scale for DPR
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(this.dpr, this.dpr);
+
+    // Restore the last frame at the new size
+    if (this.lastPlants) {
+      this.render(this.lastPlants, this.lastTime);
+    }
   }
 
   /**
-   * Clear the canvas
+   * Clear the canvas to the configured background
+   * ('transparent' lets the page show through — the default)
    */
   clear(): void {
-    this.ctx.fillStyle = '#ffffff';
+    const { background } = this.options;
+    if (!background || background === 'transparent') {
+      this.ctx.clearRect(0, 0, this.width, this.height);
+      return;
+    }
+    this.ctx.fillStyle = background;
     this.ctx.fillRect(0, 0, this.width, this.height);
   }
 
@@ -137,8 +159,8 @@ export class Renderer {
    * Draw ground indicator
    */
   drawGround(): void {
-    this.ctx.fillStyle = 'rgba(139, 119, 101, 0.08)';
-    this.ctx.fillRect(0, this.height - 8, this.width, 8);
+    this.ctx.fillStyle = COLORS.GROUND_COLOR;
+    this.ctx.fillRect(0, this.height - ANIMATION.GROUND_HEIGHT, this.width, ANIMATION.GROUND_HEIGHT);
   }
 
   /**
@@ -199,6 +221,9 @@ export class Renderer {
    * Uses object pool for growth phase calculations to minimize allocations
    */
   render(plants: PlantData[], time: number): void {
+    this.lastPlants = plants;
+    this.lastTime = time;
+
     this.pool.beginFrame();
     try {
       this.clear();
@@ -280,8 +305,9 @@ export class Renderer {
     // Reset object pool to free memory
     this.pool.reset();
 
-    // Release cached gradient
+    // Release cached gradient and last-frame references
     this.fadeGradientCache = null;
+    this.lastPlants = null;
 
     // Remove canvas from DOM
     if (this.canvas.parentNode) {

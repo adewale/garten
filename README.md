@@ -126,10 +126,11 @@ Only `container` is required. Everything else has sensible defaults.
 | `colors.accentWeight` | `number` | `0.4` | Fraction of plants using accent color (0-1) |
 | `colors.flowerColors` | `string[]` | `[]` | Custom flower colors (overrides palette) |
 | `colors.foliageColors` | `string[]` | `[]` | Custom leaf/stem colors (overrides palette) |
+| `background` | `string` | `'transparent'` | Canvas background. Any CSS color, or `'transparent'` to let the page show through (works on dark pages) |
 | `opacity` | `number` | `1` | Global opacity (0-1) |
 | `zIndex` | `number` | `-1` | CSS z-index for canvas |
 | `fadeHeight` | `number` | `0` | Fade-out zone height as fraction (0-1) |
-| `fadeColor` | `string` | `'#ffffff'` | Background color for fade effect |
+| `fadeColor` | `string` | `'#ffffff'` | Color the fade blends into (match your page background) |
 
 **Performance:**
 
@@ -145,20 +146,31 @@ Only `container` is required. Everything else has sensible defaults.
 |--------|------|---------|-------------|
 | `seed` | `number` | random | RNG seed for reproducible gardens |
 
+The generator uses integer hashing (no floating-point transcendentals), so
+the same seed produces the same garden in every browser and JS engine.
+
+**Accessibility:** when `respectReducedMotion` is enabled (the default) and the
+user prefers reduced motion, the garden renders fully grown as a static image.
+An explicit `play()` call still animates — a direct user action is treated as
+consent to motion.
+
 </details>
 
 ### Methods
 
 ```typescript
-garden.play()              // Start or resume
+garden.play()              // Start, or resume from pause()/seek() position
 garden.pause()             // Pause animation
 garden.stop()              // Stop and reset to beginning
-garden.seek(seconds)       // Jump to specific time
-garden.setSpeed(2)         // Change playback speed
+garden.seek(seconds)       // Jump to specific time (then play() resumes there)
+garden.setSpeed(2)         // Change playback speed (positive finite, clamped to 0.01-100)
 garden.setOptions({...})   // Update options (regenerates plants if needed)
 garden.regenerate()        // Force new random garden
-garden.destroy()           // Clean up and remove canvas
+garden.destroy()           // Clean up and remove canvas (all later calls are no-ops)
 ```
+
+Note: `container` cannot be changed via `setOptions()` — destroy the instance
+and create a new one instead.
 
 ### Getters
 
@@ -170,6 +182,8 @@ garden.getElapsedTime()    // Seconds elapsed
 
 ### Events
 
+Two equivalent ways to observe the garden. Constructor callbacks:
+
 ```typescript
 events: {
   onStateChange: (state: PlaybackState) => void,
@@ -178,6 +192,24 @@ events: {
   onComplete: () => void,
 }
 ```
+
+Or subscribe/unsubscribe at any time:
+
+```typescript
+const off = garden.on('generationComplete', ({ generation, totalGenerations }) => {
+  console.log(`${generation}/${totalGenerations}`);
+});
+garden.once('complete', () => console.log('done'));
+garden.on('stateChange', ({ state }) => console.log(state));
+off(); // unsubscribe
+
+// Available events: 'play' | 'pause' | 'stop' | 'complete' | 'progress'
+//   | 'generationComplete' | 'stateChange' | 'regenerate' | 'optionsChange'
+```
+
+`generationComplete` fires once per generation in order, even when several
+generations elapse between frames (e.g. a background tab catching up).
+`seek()` does not fire events for the boundaries it jumps across.
 
 ### Cleanup (Important for SPAs)
 

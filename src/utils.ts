@@ -17,68 +17,28 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/**
- * Parse hex color to RGB components
- */
-export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result) return null;
+// Color helpers are implemented once in Color.ts (3/6/8-digit hex support).
+// Re-exported here so internal call sites and the public API share one
+// implementation — a previous duplicate here only handled 6-digit hex.
+export { hexToRgb, rgbToHex, lightenColor, darkenColor } from './Color';
 
-  const r = parseInt(result[1], 16);
-  const g = parseInt(result[2], 16);
-  const b = parseInt(result[3], 16);
-
-  // Guard against NaN (shouldn't happen with valid regex match, but defensive)
-  if (isNaN(r) || isNaN(g) || isNaN(b)) return null;
-
-  return { r, g, b };
-}
+// Environment checks are implemented once in Environment.ts.
+export { prefersReducedMotion, getPixelRatio } from './Environment';
 
 /**
- * Convert RGB to hex
+ * Shallow-copy an object, dropping keys whose value is `undefined`.
+ * Prevents explicit-undefined fields from clobbering defaults in spreads:
+ * `{ ...defaults, ...omitUndefined(user) }`.
  */
-export function rgbToHex(r: number, g: number, b: number): string {
-  return '#' + [r, g, b].map((x) => Math.round(x).toString(16).padStart(2, '0')).join('');
-}
-
-/**
- * Lighten a hex color
- */
-export function lightenColor(hex: string, amount: number): string {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-
-  return rgbToHex(
-    Math.min(255, rgb.r + (255 - rgb.r) * amount),
-    Math.min(255, rgb.g + (255 - rgb.g) * amount),
-    Math.min(255, rgb.b + (255 - rgb.b) * amount)
-  );
-}
-
-/**
- * Darken a hex color
- */
-export function darkenColor(hex: string, amount: number): string {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-
-  return rgbToHex(rgb.r * (1 - amount), rgb.g * (1 - amount), rgb.b * (1 - amount));
-}
-
-/**
- * Check if prefers-reduced-motion is enabled
- */
-export function prefersReducedMotion(): boolean {
-  if (typeof window === 'undefined') return false;
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-}
-
-/**
- * Get device pixel ratio, clamped to max
- */
-export function getPixelRatio(max: number): number {
-  if (typeof window === 'undefined') return 1;
-  return Math.min(window.devicePixelRatio || 1, max);
+export function omitUndefined<T extends object>(obj: T | undefined): Partial<T> {
+  const result: Partial<T> = {};
+  if (!obj) return result;
+  for (const key of Object.keys(obj) as Array<keyof T>) {
+    if (obj[key] !== undefined) {
+      result[key] = obj[key];
+    }
+  }
+  return result;
 }
 
 /**

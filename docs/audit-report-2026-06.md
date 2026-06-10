@@ -1,5 +1,12 @@
 # Garten Deep Audit — June 2026 (v1.0.3)
 
+> **Resolution status: all findings fixed in v1.1.0** (see
+> `CHANGELOG.md`). Each High/Medium finding gained a regression test before
+> its fix; the test-coverage gaps below were closed by `src/Garden.test.ts`,
+> the theme/preset constructibility suite, the path-integrity harness in
+> `src/plants/renderers.test.ts`, and the build-target enforcement in
+> `tsup.config.ts`.
+
 Full-system audit covering every source module, the build/packaging pipeline, the test
 suite, and all documentation. Suspected defects were **empirically verified** with
 throwaway tests before being reported (methodology at the end). The previous report in

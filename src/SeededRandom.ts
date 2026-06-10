@@ -4,13 +4,34 @@
  */
 
 /**
+ * Hash a (possibly fractional, possibly negative) numeric seed into a
+ * uniformly distributed value in [0, 1).
+ *
+ * Uses a splitmix32-style integer avalanche. Unlike the previous
+ * fract(sin(seed)) approach this relies only on exactly-specified IEEE 754
+ * arithmetic and bit operations, so the same seed produces the same value
+ * in every JavaScript engine, and sequential seeds are fully decorrelated.
+ */
+function hashSeed(seed: number): number {
+  const i = Math.floor(seed);
+  const f = seed - i;
+  // Fold integer part (>>> 0 maps negatives to distinct uint32 values)
+  // and fractional part into one 32-bit state
+  let h = (i >>> 0) ^ Math.imul(Math.floor(f * 0x40000000), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 16), 0x21f0aaad);
+  h = Math.imul(h ^ (h >>> 15), 0x735a2d97);
+  h = (h ^ (h >>> 15)) >>> 0;
+  return h / 0x100000000;
+}
+
+/**
  * SeededRandom class - A comprehensive seeded pseudo-random number generator
  *
  * Features:
  * - Deterministic: Same seed always produces same sequence
  * - Rich API: Range, pick, shuffle, normal distribution
  * - Stateful: Maintains seed state for sequential calls
- * - Lightweight: Uses simple sine-based PRNG (good enough for visual use)
+ * - Lightweight: Uses a splitmix32-style integer hash (portable across engines)
  *
  * Usage:
  * ```typescript
@@ -70,8 +91,7 @@ export class SeededRandom {
    * Generate the next random value (0-1)
    */
   next(): number {
-    const x = Math.sin(this._seed++ * 9999) * 10000;
-    return x - Math.floor(x);
+    return hashSeed(this._seed++);
   }
 
   /**
@@ -264,8 +284,8 @@ export class SeededRandom {
    * @param stdDev Standard deviation
    */
   gaussian(mean: number = 0, stdDev: number = 1): number {
-    // Box-Muller transform
-    const u1 = this.next();
+    // Box-Muller transform (epsilon floor prevents log(0) = -Infinity)
+    const u1 = Math.max(this.next(), 1e-12);
     const u2 = this.next();
 
     const z0 = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
@@ -410,8 +430,7 @@ export class SeededRandom {
  * Compatible with existing code
  */
 export function seededRandom(seed: number): number {
-  const x = Math.sin(seed * 9999) * 10000;
-  return x - Math.floor(x);
+  return hashSeed(seed);
 }
 
 /**

@@ -5,6 +5,95 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-06-10
+
+Fixes every finding from the June 2026 audit (`docs/audit-report-2026-06.md`).
+
+> **Determinism note:** the RNG was replaced and seed derivation fixed, so a
+> given `seed` produces a *different* (and now cross-browser-stable) garden
+> than in 1.0.x.
+
+### Fixed
+
+- `applyTheme()` crashed the constructor for 6 of 11 built-in themes
+  (natural, sunset, ocean, grayscale, vibrant, sakura): explicit `undefined`
+  color fields clobbered defaults during option resolution. All merge sites
+  now strip `undefined`, and palette builders are defensive
+- Per-plant seed collisions: generation/plant seed strides overlapped, making
+  plant 10+ of each generation a pixel-identical duplicate of a plant in the
+  following generation (at `lush` density over half the garden was duplicates)
+- Resizing while paused/complete/idle permanently blanked the canvas — the
+  renderer now re-renders the last frame after resize
+- Climber vines rendered broken: leaf drawing interrupted the in-progress
+  vine path (`beginPath()` discards the current path), so most segments were
+  never stroked. Vines now stroke completely before leaves are drawn
+- Plant layering was inverted: tall plants drew over short foreground plants.
+  Plants now draw tallest-first (painter's algorithm)
+- Published bundles contained ES2020 syntax (`??`, `?.`) that the documented
+  minimum browsers (Chrome 64, Safari 12, Firefox 69) cannot parse — the
+  build now transpiles to those exact targets
+- A legal configuration (`generations: 1000` + dense/lush density) exceeded
+  the growth pool's hard cap mid-animation and froze the loop; the cap now
+  covers the worst legal case (32,768) and a throwing frame pauses the
+  animation recoverably instead of stranding it in `playing`
+- `onGenerationComplete` skipped generations when several boundaries elapsed
+  between frames (background tabs, slow frames, high speed) — every crossed
+  generation is now reported in order
+- `seek()` before `play()` was ignored from idle/complete; `play()` now
+  resumes from the sought position, and seeking backward out of `complete`
+  returns to a resumable state
+- `NaN`/`Infinity` numeric options passed through clamping unchanged and
+  silently broke the animation — non-finite values now fall back to defaults;
+  `accentWeight` is clamped to [0, 1]
+- Negative seeds all clamped to 0; they now normalize to distinct values
+- `fadeColor: '#fff'` (3-digit hex) silently disabled the fade: the internal
+  hex parser only handled 6-digit hex while the exported one handled 3/6/8.
+  All color utilities now share the single `Color.ts` implementation
+- Accent weighting silently dropped the tail of the base palette (the
+  whites/creams in `natural` could never appear); all base colors are now
+  always included with the accent proportion achieved by repetition
+- `setOptions({ speed: invalid })` threw only *after* applying the other
+  options; validation now happens before any mutation. `setSpeed()` rejects
+  non-finite values and clamps to the documented range
+- `setOptions({ container })` was silently ignored; it now throws with
+  guidance to create a new instance
+- Visual-only option changes (`background`, `fadeColor`, `opacity`, ...)
+  while paused now re-render immediately instead of on the next playing frame
+- All controller methods are no-ops after `destroy()` (previously `seek`,
+  `stop`, `setOptions`, and `regenerate` still ran against the detached canvas)
+- `GrowthProgress.clone()` dropped custom growth configs;
+  `calculateGrowthPhases()` now clamps progress to 1 like the class/pool
+  versions; `gaussian()` can no longer return `-Infinity`
+- `Environment.prefersReducedMotion()`/`prefersDarkMode()` returned stale
+  cached values; they now query fresh
+- SSR: constructing with a selector string outside a browser now throws a
+  clear "requires a browser environment" error instead of a misleading
+  "invalid selector" one
+
+### Added
+
+- `background` option (default `'transparent'`): the canvas no longer paints
+  an opaque white rectangle, so the garden works on dark and colored pages
+- `on()` / `once()` / `off()` subscription API on `Garten`, emitting
+  `play`, `pause`, `stop`, `complete`, `progress`, `generationComplete`,
+  `stateChange`, `regenerate`, and `optionsChange` (the previously exported
+  `EventEmitter` and event types are now actually wired in)
+- Garden/Renderer lifecycle test suite (mocked canvas + fake rAF), theme/preset
+  constructibility tests, seed-uniqueness and option-sanitization constraints,
+  and a canvas path-integrity test harness (50 new tests)
+
+### Changed
+
+- RNG is now a splitmix32-style integer hash instead of `fract(sin(x))`:
+  deterministic across JS engines (the old form depended on each engine's
+  `Math.sin`) and better distributed
+- Renderer color/timing literals now reference the exported constants
+  (`COLORS.*`, `ANIMATION.*`) instead of duplicated inline values
+- Removed the `browser` package.json field (legacy bundlers resolved the
+  IIFE for `import` and broke named imports); `exports` is authoritative
+- Performance test budgets relaxed ~10x — they are regression canaries, not
+  benchmarks, and previously failed on slow CI hosts
+
 ## [1.0.2] - 2026-03-02
 
 ### Fixed

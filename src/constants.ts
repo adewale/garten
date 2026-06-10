@@ -120,8 +120,8 @@ export const COLORS = {
   TULIP_STRIPE: '#FFFFFF',
   /** Ground indicator */
   GROUND_COLOR: 'rgba(139, 119, 101, 0.08)',
-  /** Canvas background */
-  CANVAS_BACKGROUND: '#ffffff',
+  /** Default canvas background ('transparent' clears instead of filling) */
+  CANVAS_BACKGROUND: 'transparent',
   /** Default accent color (Cloudflare orange) */
   DEFAULT_ACCENT: '#F6821F',
   /** Default fade color */
