@@ -59,7 +59,7 @@ Budgets are now ~10× regression canaries and the suite runs under coverage.
 
 | Metric | v1.0.3 | v1.1.0 |
 |---|---|---|
-| Tests | 503 | 946 |
+| Tests | 503 | 946 (at upgrade; 978 + 14 Playwright after §5) |
 | Test files | 13 | 17 |
 | Suites crossing the constructor boundary | 0 | 3 (Garden, constructibility, lattice) |
 | Exhaustive enum sweeps | 0 | 147 types × 6 stages × 4 scenarios |

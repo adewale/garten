@@ -84,13 +84,17 @@ Fixes every finding from the June 2026 audit (`docs/audit-report-2026-06.md`).
   `canvas.width` assignment, color format parsing)
 - Automated mutation testing via Stryker (`npm run test:mutation`,
   `test:mutation:core` for the options/palette/growth/generation boundary)
-  with perTest coverage analysis and an incremental cache
+  with perTest coverage analysis and an incremental cache; survivor mining
+  added class-level nets (pinned default values, exhaustive bounds-edge
+  clamping, easing-function contracts, equality field sensitivity)
+- CI workflow (`.github/workflows/ci.yml`): verify + Chromium suites on
+  every PR and push to main; weekly scoped mutation run with report artifact
 - Testing approach rebuilt on [testing-best-practices](https://github.com/adewale/testing-best-practices)
   research (`TESTING.md`): exhaustive 147-type render sweep under a strict
   semantic canvas mock, doc-sync tests (README/FAQ verified against code and
   build targets), cross-constant invariant tests, a fast-check totality
   property over the options boundary, and an `es-check` dist syntax gate
-  (`npm run verify`). 946 tests; defect-reintroduction kill rate 12/12 vs
+  (`npm run verify`). 978 vitest + 14 Playwright tests; defect-reintroduction kill rate 12/12 vs
   0/12 for the v1.0.x suite — see `docs/test-suite-benchmark-2026-06.md`
 - Root-cause sweep fixes: `GrowthProgress` partial-config merges no longer
   NaN-poison phases via explicit `undefined`; `GrowthProgressPool` sanitizes
@@ -109,7 +113,7 @@ Fixes every finding from the June 2026 audit (`docs/audit-report-2026-06.md`).
   `EventEmitter` and event types are now actually wired in)
 - Garden/Renderer lifecycle test suite (mocked canvas + fake rAF), theme/preset
   constructibility tests, seed-uniqueness and option-sanitization constraints,
-  and a canvas path-integrity test harness (50 new tests)
+  and a canvas path-integrity test harness (475 tests added since 1.0.x)
 
 ### Changed
 
@@ -122,6 +126,12 @@ Fixes every finding from the June 2026 audit (`docs/audit-report-2026-06.md`).
   IIFE for `import` and broke named imports); `exports` is authoritative
 - Performance test budgets relaxed ~10x — they are regression canaries, not
   benchmarks, and previously failed on slow CI hosts
+
+## [1.0.3] - 2026-03-03
+
+Version bump only — no code changes (package.json/package-lock.json).
+Note: 1.0.3 was never published to npm; the latest published release at the
+time of the 1.1.0 audit was 1.0.2.
 
 ## [1.0.2] - 2026-03-02
 

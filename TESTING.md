@@ -10,7 +10,7 @@ and `docs/test-suite-benchmark-2026-06.md` for the before/after numbers).
 
 ```bash
 npm test               # watch mode
-npm run test:run       # single pass (946 tests, ~7s)
+npm run test:run       # single pass (~980 tests, ~7s)
 npm run test:coverage  # with v8 coverage
 npm run verify         # typecheck + tests + build + dist syntax gate
 npm run check:dist     # es-check: dist/ parses at the documented browser level

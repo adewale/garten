@@ -149,6 +149,8 @@ A call-recording canvas mock happily reported `quadraticCurveTo` called 8 times 
 
 **Lesson:** for stateful platform APIs (canvas, WebGL, audio graphs), the mock must model the state machine: unflushed-path detection, save/restore depth, negative-radius throws, non-finite coordinate flags. Our strict mock turned an invisible bug class into `expect(ctx.violations).toEqual([])`.
 
+**Postscript:** a hand-encoded mock is itself a claim that needs a failing condition. `tests/contract/canvas-contract.spec.ts` now validates every encoded rule against real Chromium (all passed on first run), and `tests/visual/` asserts on real rasterized pixels — including byte-identical bitmaps for the same seed across page loads.
+
 ## 16. When the State Space Is Bounded, Test All of It
 
 147 plant types × 6 growth stages is 882 cheap cases — there was never a reason to sample. The climber bug hid because climbers only appear at `maxHeight >= 0.5` and no default config or test ever rendered one. The exhaustive sweep also asserts every type draws *something* at full growth, so a silently-blank plant type is now impossible.
@@ -176,6 +178,8 @@ Numbers from the v1.1.0 testing upgrade (same machine, see `docs/test-suite-benc
 - The v1.0.3 suite could not even *run* under coverage instrumentation — wall-clock perf assertions failed. Budgets are now regression canaries (~10× headroom).
 
 **Lesson:** "does the suite catch the bugs we actually shipped?" is a measurable question. Re-introduce fixed defects periodically (or run mutation testing) — a suite that has never been measured against real defects is an untested test suite.
+
+**Postscript:** mutation testing is now automated (Stryker, weekly in CI) and its first survivor-mining pass found real gaps the probes missed: nothing pinned the default option values (a `loop: false → true` mutant survived everything), bounds were never probed at their edges, and easing-function bodies could be emptied unnoticed. Class-level nets took `GrowthProgress.ts` from 67.6% to 88.0% and the core boundary to ~73%; what survives is classified (tuning constants, dev-warning text) rather than ignored.
 
 ## 20. A Lesson Written as Prose Is a Lesson Waiting to Recur
 

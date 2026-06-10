@@ -57,11 +57,13 @@ describe('Doc sync: README documents the full public API', () => {
 describe('Doc sync: numeric claims match the code', () => {
   const typeCount = Object.values(PlantType).length;
   const categoryCount = PLANT_CATEGORIES.length;
+  const architecture = read('docs/architecture.md');
 
-  it.each(['README.md', 'CLAUDE.md'] as const)(
+  it.each(['README.md', 'CLAUDE.md', 'docs/architecture.md'] as const)(
     '%s plant type and category counts are accurate',
     (file) => {
-      const content = file === 'README.md' ? readme : claudeMd;
+      const content =
+        file === 'README.md' ? readme : file === 'CLAUDE.md' ? claudeMd : architecture;
       expect(content).toContain(`${typeCount} plant type`);
       expect(content).toContain(`${categoryCount} categories`);
     }
@@ -70,6 +72,28 @@ describe('Doc sync: numeric claims match the code', () => {
   it('the PlantType enum actually has the advertised count', () => {
     expect(typeCount).toBe(147);
     expect(categoryCount).toBe(19);
+  });
+});
+
+describe('Doc sync: architecture internals match the implementation', () => {
+  // architecture.md documented the pre-1.1.0 seed-collision formula and the
+  // inverted sort for months after both were fixed. Pin the load-bearing
+  // internals it documents to the values the code exports.
+  const architecture = read('docs/architecture.md');
+  const generatorSource = read('src/plants/generator.ts');
+
+  it('documents the current seed strides', () => {
+    expect(architecture).toContain('100_000');
+    expect(architecture).toContain('137');
+    // ...and the code really uses them
+    expect(generatorSource).toContain('GEN_SEED_STRIDE = 100_000');
+    expect(generatorSource).toContain('PLANT_SEED_STRIDE = 137');
+  });
+
+  it('documents the tallest-first painter ordering used by the generator', () => {
+    const comparator = 'b.maxHeight - a.maxHeight';
+    expect(architecture).toContain(comparator);
+    expect(generatorSource).toContain(comparator);
   });
 });
 
