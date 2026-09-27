@@ -47,6 +47,22 @@ jobs:
             test-results/
           retention-days: 14
 
+  probes:
+    name: Defect-reintroduction probes (12 historical defects)
+    # Re-applies each of the 12 defects from the June 2026 audit
+    # (scripts/defect-probes/*.patch) and fails if the suite still passes
+    # with any of them. Weekly + on demand, alongside mutation testing.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run test:probes
+
   mutation:
     name: Mutation testing (core boundary)
     # Too slow for every push: weekly + on demand. The es-check gate and

@@ -166,8 +166,9 @@ changes (incremental cache keeps re-runs cheap).
 - Perf: the scratch benchmark lives in this commit's history (used a no-op
   canvas context, `vitest run`, best-of-5).
 - Coverage: `npx vitest run --coverage --coverage.reporter=json-summary`.
-- Probes: re-apply each table-1 mutation (regex patches over the named
-  files), run `npm run test:run`, expect failure, `git checkout -- <file>`.
+- Probes: `npm run test:probes` (patches in `scripts/defect-probes/`; runs
+  weekly in CI). Each patch re-introduces one table-1 defect in a scratch
+  worktree and the suite must fail.
 - Mutation testing: `npm run test:mutation:core` (scoped) or
   `npm run test:mutation` (full src); HTML report at
   `reports/mutation/mutation.html`, incremental cache in `reports/`.

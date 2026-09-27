@@ -130,17 +130,26 @@ The suite's strength is verified, not assumed:
   mutates the options/palette/growth/generation boundary files and runs the
   vitest suite per mutant (`coverageAnalysis: perTest`, incremental cache in
   `reports/stryker-incremental.json`); `npm run test:mutation` covers all of
-  `src/`. Baseline, scores, and how to read survivors (tuning constants vs
+  `src/`. Stryker runs `vitest.stryker.config.ts`, which is the normal suite
+  minus the wall-clock perf canaries: instrumentation slows the mutated files
+  several-fold, and the ops/sec floors otherwise fail the initial dry run. Baseline, scores, and how to read survivors (tuning constants vs
   real assertion gaps): `docs/test-suite-benchmark-2026-06.md` §5c. Run it
   after substantial suite or boundary changes — it is too slow for the
   per-commit `verify` gate. When a survivor exposes a real gap, kill it with
   a *class-level* assertion (e.g. the color well-formedness constraint), not
   a mutant-shaped one.
 - **Defect-reintroduction probes**: the 12 historical defects from the June
-  2026 audit are re-applied one at a time and the suite must kill each one.
+  2026 audit are committed as patches in `scripts/defect-probes/`
+  (`P01`–`P12`, one per defect in table 1 of
+  `docs/test-suite-benchmark-2026-06.md`). `npm run test:probes` applies each
+  one to a disposable worktree of `HEAD`, runs the vitest suite (minus the
+  wall-clock perf canaries), and exits non-zero unless the unpatched suite
+  passes and **every** probe is killed. CI runs it weekly and on demand.
   Current kill rate: 12/12 (the v1.0.3 suite scored 0/12 — every defect
   shipped under green). The probes remain the curated, fast complement to
   Stryker: they encode *real shipped bugs* rather than synthetic operators.
+  If a refactor makes a patch stop applying, the runner reports it as STALE:
+  re-express the same defect against the new code rather than deleting it.
 - When fixing any bug: write the failing test first (red), fix (green), and
   ask which *class* the bug belongs to — then add the class-level net
   (property, invariant, or sweep), not just the instance-level regression.

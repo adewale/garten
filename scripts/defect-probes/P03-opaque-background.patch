@@ -1,0 +1,18 @@
+diff --git a/src/Renderer.ts b/src/Renderer.ts
+index 7840b5d..d74d04f 100644
+--- a/src/Renderer.ts
++++ b/src/Renderer.ts
+@@ -149,12 +149,7 @@ export class Renderer {
+    * ('transparent' lets the page show through — the default)
+    */
+   clear(): void {
+-    const { background } = this.options;
+-    if (!background || background === 'transparent') {
+-      this.ctx.clearRect(0, 0, this.width, this.height);
+-      return;
+-    }
+-    this.ctx.fillStyle = background;
++    this.ctx.fillStyle = '#ffffff';
+     this.ctx.fillRect(0, 0, this.width, this.height);
+   }
+ 
