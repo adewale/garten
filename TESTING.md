@@ -159,5 +159,9 @@ The suite's strength is verified, not assumed:
 - Visual goldens are Linux-Chromium only (the CI platform). Cross-browser
   pixel parity (WebKit/Firefox projects) is possible but each adds a golden
   set; the pixel-probe assertions already run identically everywhere.
-- Mutation testing is scoped + scheduled rather than gating: a full-`src`
-  run is CPU-expensive. Revisit if CI capacity allows.
+- Mutation testing is scoped and scheduled (weekly, plus on demand) rather
+  than run per commit: a full-`src` run is CPU-expensive. The scheduled
+  core run fails below a mutation score of 70 (`break` in
+  `stryker.config.json`; measured baseline 75.8% total / 81.1% covered,
+  2026-09). Raise `break` as survivors are killed; never lower it to get
+  green.
