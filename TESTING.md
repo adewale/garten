@@ -108,6 +108,14 @@ npx playwright install chromium   # one-time browser download
 npm run test:e2e                  # build + visual + contract projects
 ```
 
+The goldens and CI use the Playwright version in `package-lock.json`
+(`@playwright/test` 1.60.0), which downloads Chromium revision 1223
+(Chrome for Testing 148.0.7778.96). Reproduce CI locally with that version
+(`npm ci`, then `npx playwright install chromium`); a different Playwright
+release expects a different Chromium revision and can fail to launch or
+shift anti-aliasing in the goldens. When upgrading Playwright, update this
+note and regenerate the goldens on Linux.
+
 ## Mock contract tests (Playwright)
 
 `tests/contract/canvas-contract.spec.ts` validates every hand-encoded rule of
