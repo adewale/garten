@@ -1,0 +1,13 @@
+diff --git a/src/Garden.ts b/src/Garden.ts
+index e8a8d33..b85c6fd 100644
+--- a/src/Garden.ts
++++ b/src/Garden.ts
+@@ -160,7 +160,7 @@ export class Garten implements GardenController {
+     const { duration, generations } = this.options;
+     const currentGen = getCompletedGenerations(this.elapsedTime, duration, generations);
+ 
+-    for (let gen = Math.max(1, this.lastReportedGeneration + 1); gen <= currentGen; gen++) {
++    for (let gen = Math.max(1, this.lastReportedGeneration + 1, currentGen); gen <= currentGen; gen++) {
+       this.options.events.onGenerationComplete?.(gen, generations);
+       if (this.emitter.hasListeners('generationComplete')) {
+         this.emitter.emit('generationComplete', {

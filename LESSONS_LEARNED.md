@@ -179,7 +179,7 @@ Numbers from the v1.1.0 testing upgrade (same machine, see `docs/test-suite-benc
 
 **Lesson:** "does the suite catch the bugs we actually shipped?" is a measurable question. Re-introduce fixed defects periodically (or run mutation testing) — a suite that has never been measured against real defects is an untested test suite.
 
-**Postscript:** mutation testing is now automated (Stryker, weekly in CI) and its first survivor-mining pass found real gaps the probes missed: nothing pinned the default option values (a `loop: false → true` mutant survived everything), bounds were never probed at their edges, and easing-function bodies could be emptied unnoticed. Class-level nets took `GrowthProgress.ts` from 67.6% to 88.0% and the core boundary to ~73%; what survives is classified (tuning constants, dev-warning text) rather than ignored.
+**Postscript:** mutation testing is now automated (Stryker, on demand in CI) and its first survivor-mining pass found real gaps the probes missed: nothing pinned the default option values (a `loop: false → true` mutant survived everything), bounds were never probed at their edges, and easing-function bodies could be emptied unnoticed. Class-level nets took `GrowthProgress.ts` from 67.6% to 88.0% and the core boundary to ~73%; what survives is classified (tuning constants, dev-warning text) rather than ignored.
 
 ## 20. A Lesson Written as Prose Is a Lesson Waiting to Recur
 

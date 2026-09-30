@@ -1,0 +1,15 @@
+diff --git a/src/Renderer.ts b/src/Renderer.ts
+index 7840b5d..575c99d 100644
+--- a/src/Renderer.ts
++++ b/src/Renderer.ts
+@@ -138,10 +138,6 @@ export class Renderer {
+     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+     this.ctx.scale(this.dpr, this.dpr);
+ 
+-    // Restore the last frame at the new size
+-    if (this.lastPlants) {
+-      this.render(this.lastPlants, this.lastTime);
+-    }
+   }
+ 
+   /**
