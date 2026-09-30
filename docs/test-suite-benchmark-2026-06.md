@@ -156,6 +156,15 @@ Reading the spread honestly:
   The load-bearing behavior (defaults, clamp edges, sanitization, fallback
   values) is now pinned directly; what survives is the equivalent-ish class.
 
+**CI baseline (ubuntu-latest, `npm run test:mutation:core` at `94f2c09`):
+73.86% total / 79.12% covered, 3–5 timeouts, 507–652 s per run.** A weekly
+schedule produced this identical score 16 times (2026-06-15 to 2026-09-28)
+on unchanged `main` and led to no follow-up commit, so the schedule was
+removed and the job is on demand only. Local runs are not comparable: on a
+loaded machine instrumented tests time out, and Stryker counts timeouts as
+detected (a 2026-09 local run with 23 timeouts scored 75.75%). `break`
+stays `null` until like-for-like CI history exists.
+
 The defect-reintroduction probes (section 1) remain the fast, curated
 complement: they encode real shipped bugs; Stryker covers the synthetic
 operator space between them and is run after substantial boundary or suite
@@ -167,10 +176,12 @@ changes (incremental cache keeps re-runs cheap).
   canvas context, `vitest run`, best-of-5).
 - Coverage: `npx vitest run --coverage --coverage.reporter=json-summary`.
 - Probes: `npm run test:probes` (patches in `scripts/defect-probes/`; runs
-  weekly in CI). Each patch re-introduces one table-1 defect in a scratch
-  worktree and the suite must fail.
+  in CI via `.github/workflows/probes.yml` on PRs and pushes that touch the
+  code, suite, probes or test configs, ~2 min). Each patch re-introduces one
+  table-1 defect in a scratch worktree and the suite must fail.
 - Mutation testing: `npm run test:mutation:core` (scoped) or
   `npm run test:mutation` (full src); HTML report at
-  `reports/mutation/mutation.html`, incremental cache in `reports/`.
+  `reports/mutation/mutation.html`, incremental cache in `reports/`. In CI,
+  on demand only (`workflow_dispatch` on `ci.yml`).
 - Real-pixel + contract: `npx playwright install chromium` once, then
   `npm run test:e2e`.

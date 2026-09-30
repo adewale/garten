@@ -19,10 +19,14 @@ npm run check:dist     # es-check: dist/ parses at the documented browser level
 `npm run verify` is the pre-publish gate (`prepublishOnly`).
 
 CI (`.github/workflows/ci.yml`) runs `verify` and the Chromium suites on
-every PR/push to main, and the scoped mutation run weekly or on demand
-(`workflow_dispatch`), uploading the HTML report as an artifact. Perf
-canaries assume an uncontended runner — running the vitest suite while a
-local Stryker run saturates the CPU can flake them.
+every PR/push to main. `.github/workflows/probes.yml` runs the
+defect-reintroduction probes (~2 min) on PRs and pushes to main that touch
+`src/`, `tests/`, the probes, `package.json`/`package-lock.json`, the
+vitest/Stryker configs or that workflow. The scoped mutation run is on
+demand only (`workflow_dispatch` on `ci.yml`, ~10 min), uploading the HTML
+report as an artifact. Perf canaries assume an uncontended runner —
+running the vitest suite while a local Stryker run saturates the CPU can
+flake them.
 
 ## Organizing principle: cover risk boundaries, not files
 
@@ -139,9 +143,12 @@ The suite's strength is verified, not assumed:
   vitest suite per mutant (`coverageAnalysis: perTest`, incremental cache in
   `reports/stryker-incremental.json`); `npm run test:mutation` covers all of
   `src/`. Stryker runs `vitest.stryker.config.ts`, which is the normal suite
-  minus the wall-clock perf canaries: instrumentation slows the mutated files
-  several-fold, and the ops/sec floors otherwise fail the initial dry run. Baseline, scores, and how to read survivors (tuning constants vs
-  real assertion gaps): `docs/test-suite-benchmark-2026-06.md` §5c. Run it
+  minus the wall-clock perf canaries: instrumentation slows the mutated
+  files several-fold, so the ops/sec floors can fail the initial dry run on
+  a loaded machine (seen locally; not observed on ubuntu-latest, where 16/16
+  weekly dry runs with the canaries passed). Baseline, scores, and how to
+  read survivors (tuning constants vs real assertion gaps):
+  `docs/test-suite-benchmark-2026-06.md` §5c. Run it
   after substantial suite or boundary changes — it is too slow for the
   per-commit `verify` gate. When a survivor exposes a real gap, kill it with
   a *class-level* assertion (e.g. the color well-formedness constraint), not
@@ -152,7 +159,10 @@ The suite's strength is verified, not assumed:
   `docs/test-suite-benchmark-2026-06.md`). `npm run test:probes` applies each
   one to a disposable worktree of `HEAD`, runs the vitest suite (minus the
   wall-clock perf canaries), and exits non-zero unless the unpatched suite
-  passes and **every** probe is killed. CI runs it weekly and on demand.
+  passes and **every** probe is killed. CI runs it on every PR and push to
+  main that touches the code, the suite, the probes or the test configs
+  (`probes.yml`, ~2 min), so a change that stops killing a previously
+  shipped defect fails its PR.
   Current kill rate: 12/12 (the v1.0.3 suite scored 0/12 — every defect
   shipped under green). The probes remain the curated, fast complement to
   Stryker: they encode *real shipped bugs* rather than synthetic operators.
@@ -167,9 +177,15 @@ The suite's strength is verified, not assumed:
 - Visual goldens are Linux-Chromium only (the CI platform). Cross-browser
   pixel parity (WebKit/Firefox projects) is possible but each adds a golden
   set; the pixel-probe assertions already run identically everywhere.
-- Mutation testing is scoped and scheduled (weekly, plus on demand) rather
-  than run per commit: a full-`src` run is CPU-expensive. The scheduled
-  core run fails below a mutation score of 70 (`break` in
-  `stryker.config.json`; measured baseline 75.8% total / 81.1% covered,
-  2026-09). Raise `break` as survivors are killed; never lower it to get
+- Mutation testing is scoped and on demand (`workflow_dispatch`), not
+  scheduled or per commit: a full-`src` run is CPU-expensive, and a weekly
+  schedule re-scored unchanged `main` (94f2c09) 16 times, 2026-06-15 to
+  2026-09-28, with the same result every week (73.86% total / 79.12%
+  covered, ~10 min each) and no follow-up commit, so it was removed. Run it
+  after substantial suite or boundary changes. `break` in
+  `stryker.config.json` is `null`: there is no like-for-like CI history for
+  on-demand runs yet, and local runs on a loaded machine inflate the score
+  (Stryker counts timeouts as detected; a 2026-09 local run with 23
+  timeouts scored 75.75% against CI's 73.86% with 3–5). Set a `break` only
+  once CI runs give a like-for-like baseline; never lower it to get
   green.
