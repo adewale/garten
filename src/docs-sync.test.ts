@@ -65,8 +65,9 @@ describe('Doc sync: numeric claims match the code', () => {
     (file) => {
       const content =
         file === 'README.md' ? readme : file === 'CLAUDE.md' ? claudeMd : architecture;
-      expect(content).toContain(`${typeCount} plant type`);
-      expect(content).toContain(`${categoryCount} categories`);
+      // \b so "147 plant types" cannot satisfy a count of 47
+      expect(content).toMatch(new RegExp(`\\b${typeCount} plant type`));
+      expect(content).toMatch(new RegExp(`\\b${categoryCount} categories`));
     }
   );
 });

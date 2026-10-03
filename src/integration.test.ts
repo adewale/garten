@@ -1609,31 +1609,56 @@ describe('Exhaustive: every plant type can be grown through its category', () =>
   // generated, and the renderer silently treats it as a SimpleFlower; the
   // enum-driven render sweep and the doc counts cannot see that. Grow a large
   // garden per public category name and check what actually comes out.
-  const grownBy = new Map(
-    PLANT_CATEGORIES.map((name) => {
-      const plants = generatePlants(
-        resolveOptions({
-          container: document.createElement('div'),
-          seed: 7,
-          generations: 40,
-          density: 'lush',
-          maxHeight: 1,
-          categories: [name],
-        })
+  const cache = new Map<string, ReturnType<typeof generatePlants>>();
+  const grow = (name: string) => {
+    if (!cache.has(name)) {
+      cache.set(
+        name,
+        generatePlants(
+          resolveOptions({
+            container: document.createElement('div'),
+            seed: 7,
+            generations: 40,
+            density: 'lush',
+            maxHeight: 1,
+            categories: [name],
+          })
+        )
       );
-      return [name, plants] as const;
-    })
-  );
+    }
+    return cache.get(name)!;
+  };
+  const grownBy = () => new Map(PLANT_CATEGORIES.map((name) => [name, grow(name)] as const));
 
   it.each([...PLANT_CATEGORIES])('category "%s" grows only plants of one category', (name) => {
-    const plants = grownBy.get(name)!;
+    const plants = grow(name);
     expect(plants.length).toBeGreaterThan(0);
     expect(new Set(plants.map((p) => p.category)).size).toBe(1);
   });
 
+  // Names must select the category they name, not merely some category.
+  // Most category names are also the name of their base plant type; the rest
+  // get one botanical representative each.
+  const representative: Record<string, string> = {
+    herb: PlantType.Lavender,
+    specialty: PlantType.Sunflower,
+    'tall-flower': PlantType.Hollyhock,
+    'giant-grass': PlantType.Bamboo,
+    climber: PlantType.Vine,
+    'small-tree': PlantType.SaplingOak,
+    tropical: PlantType.PalmSmall,
+    conifer: PlantType.Pine,
+  };
+  const typeValues = new Set<string>(Object.values(PlantType));
+  it.each([...PLANT_CATEGORIES])('category "%s" grows the plant it is named for', (name) => {
+    const expected = typeValues.has(name) ? name : representative[name];
+    expect(expected, `no representative plant type for "${name}"`).toBeDefined();
+    expect(grow(name).map((p) => p.type)).toContain(expected);
+  });
+
   it('distinct category names grow disjoint sets of plant types', () => {
     const owner = new Map<string, string>();
-    for (const [name, plants] of grownBy) {
+    for (const [name, plants] of grownBy()) {
       for (const { type } of plants) {
         const previous = owner.get(type);
         expect(previous === undefined || previous === name, `${type}: ${previous} and ${name}`).toBe(
@@ -1645,7 +1670,7 @@ describe('Exhaustive: every plant type can be grown through its category', () =>
   });
 
   it('every PlantType is grown by some category filter', () => {
-    const grown = new Set([...grownBy.values()].flatMap((plants) => plants.map((p) => p.type)));
+    const grown = new Set([...grownBy().values()].flatMap((plants) => plants.map((p) => p.type)));
     const neverGrown = Object.values(PlantType).filter((type) => !grown.has(type));
     expect(neverGrown).toEqual([]);
   });
