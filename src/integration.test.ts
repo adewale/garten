@@ -13,7 +13,8 @@ import { SimpleEventEmitter } from './EventEmitter';
 import { GrowthProgressPool } from './GrowthProgressPool';
 import { resolveOptions } from './defaults';
 import { buildFlowerColors, buildFoliageColors } from './palettes';
-import { generatePlants } from './plants/generator';
+import { generatePlants, PLANT_CATEGORIES } from './plants/generator';
+import { PlantType } from './types';
 import { applyPreset, applyTheme, createConfig, themes, presets } from './presets';
 import { flowerPalettes } from './palettes';
 import { hexToRgb as utilsHexToRgb } from './utils';
@@ -1593,9 +1594,60 @@ describe('Constraint: painter ordering puts shorter plants in front', () => {
       duration: 60,
     });
     const plants = generatePlants(resolved);
+    // Guard against a vacuous pass: an empty or single-height garden is
+    // trivially "sorted" under any comparator
+    expect(plants.length).toBeGreaterThan(1);
+    expect(plants[0].maxHeight).toBeGreaterThan(plants[plants.length - 1].maxHeight);
     for (let i = 1; i < plants.length; i++) {
       expect(plants[i].maxHeight).toBeLessThanOrEqual(plants[i - 1].maxHeight);
     }
+  });
+});
+
+describe('Exhaustive: every plant type can be grown through its category', () => {
+  // A PlantType missing from the generator's category registry is never
+  // generated, and the renderer silently treats it as a SimpleFlower; the
+  // enum-driven render sweep and the doc counts cannot see that. Grow a large
+  // garden per public category name and check what actually comes out.
+  const grownBy = new Map(
+    PLANT_CATEGORIES.map((name) => {
+      const plants = generatePlants(
+        resolveOptions({
+          container: document.createElement('div'),
+          seed: 7,
+          generations: 40,
+          density: 'lush',
+          maxHeight: 1,
+          categories: [name],
+        })
+      );
+      return [name, plants] as const;
+    })
+  );
+
+  it.each([...PLANT_CATEGORIES])('category "%s" grows only plants of one category', (name) => {
+    const plants = grownBy.get(name)!;
+    expect(plants.length).toBeGreaterThan(0);
+    expect(new Set(plants.map((p) => p.category)).size).toBe(1);
+  });
+
+  it('distinct category names grow disjoint sets of plant types', () => {
+    const owner = new Map<string, string>();
+    for (const [name, plants] of grownBy) {
+      for (const { type } of plants) {
+        const previous = owner.get(type);
+        expect(previous === undefined || previous === name, `${type}: ${previous} and ${name}`).toBe(
+          true
+        );
+        owner.set(type, name);
+      }
+    }
+  });
+
+  it('every PlantType is grown by some category filter', () => {
+    const grown = new Set([...grownBy.values()].flatMap((plants) => plants.map((p) => p.type)));
+    const neverGrown = Object.values(PlantType).filter((type) => !grown.has(type));
+    expect(neverGrown).toEqual([]);
   });
 });
 
