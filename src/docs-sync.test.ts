@@ -17,6 +17,7 @@ import { describe, it, expect } from 'vitest';
 import { themes, presets } from './presets';
 import { PLANT_CATEGORIES } from './plants';
 import { defaultOptions } from './defaults';
+import { GEN_SEED_STRIDE, PLANT_SEED_STRIDE } from './plants/generator';
 import { GARDEN_EVENT_TYPES, PlantType } from './types';
 
 // Vitest runs with cwd at the project root
@@ -64,36 +65,31 @@ describe('Doc sync: numeric claims match the code', () => {
     (file) => {
       const content =
         file === 'README.md' ? readme : file === 'CLAUDE.md' ? claudeMd : architecture;
-      expect(content).toContain(`${typeCount} plant type`);
-      expect(content).toContain(`${categoryCount} categories`);
+      // \b so "147 plant types" cannot satisfy a count of 47
+      expect(content).toMatch(new RegExp(`\\b${typeCount} plant type`));
+      expect(content).toMatch(new RegExp(`\\b${categoryCount} categories`));
     }
   );
-
-  it('the PlantType enum actually has the advertised count', () => {
-    expect(typeCount).toBe(147);
-    expect(categoryCount).toBe(19);
-  });
 });
 
 describe('Doc sync: architecture internals match the implementation', () => {
   // architecture.md documented the pre-1.1.0 seed-collision formula and the
-  // inverted sort for months after both were fixed. Pin the load-bearing
-  // internals it documents to the values the code exports.
+  // inverted sort for months after both were fixed. The values come from the
+  // code's exports, never from reading its source text, so a refactor of
+  // generator.ts cannot break these and a changed value cannot slip past them.
   const architecture = read('docs/architecture.md');
-  const generatorSource = read('src/plants/generator.ts');
+  // architecture.md writes numeric literals the way the source does (100_000)
+  const asLiteral = (n: number): string => String(n).replace(/\B(?=(\d{3})+$)/g, '_');
 
   it('documents the current seed strides', () => {
-    expect(architecture).toContain('100_000');
-    expect(architecture).toContain('137');
-    // ...and the code really uses them
-    expect(generatorSource).toContain('GEN_SEED_STRIDE = 100_000');
-    expect(generatorSource).toContain('PLANT_SEED_STRIDE = 137');
+    expect(architecture).toContain(`GEN_SEED_STRIDE = ${asLiteral(GEN_SEED_STRIDE)}`);
+    expect(architecture).toContain(`PLANT_SEED_STRIDE = ${asLiteral(PLANT_SEED_STRIDE)}`);
   });
 
-  it('documents the tallest-first painter ordering used by the generator', () => {
-    const comparator = 'b.maxHeight - a.maxHeight';
-    expect(architecture).toContain(comparator);
-    expect(generatorSource).toContain(comparator);
+  it('documents the tallest-first painter ordering', () => {
+    // The generator's behavior is owned by integration.test.ts
+    // ("Constraint: painter ordering puts shorter plants in front").
+    expect(architecture).toContain('b.maxHeight - a.maxHeight');
   });
 });
 

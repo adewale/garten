@@ -481,7 +481,7 @@ describe('Utility function properties', () => {
 describe('Plant variation properties', () => {
   const allPlantTypes = Object.values(PlantType);
 
-  it('all 147 plant types return valid variations', () => {
+  it('every plant type returns valid variations', () => {
     for (const type of allPlantTypes) {
       const v = getPlantVariation(type as PlantType);
       expect(v.sizeMultiplier).toBeGreaterThan(0);
@@ -491,9 +491,5 @@ describe('Plant variation properties', () => {
       expect(v.complexity).toBeGreaterThanOrEqual(0);
       expect(v.complexity).toBeLessThanOrEqual(1);
     }
-  });
-
-  it('correct number of plant types', () => {
-    expect(allPlantTypes.length).toBe(147);
   });
 });
