@@ -18,7 +18,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      # typecheck + vitest (948 tests incl. exhaustive render sweep,
+      # typecheck + vitest (incl. exhaustive render sweep,
       # doc-sync, invariants) + build + es-check dist syntax gate
       - run: npm run verify
 
