@@ -342,7 +342,8 @@ export interface GardenOptions {
   generations?: number;
 
   /**
-   * Maximum drawn plant height as fraction of container (0-1)
+   * Maximum plant (stem) height as fraction of container (0-1); flower
+   * heads, spikes and plumes can rise above it
    * Also controls which plant categories appear (each unlocks once
    * maxHeight reaches its minimum height):
    * - below 0.30: Ground plants only (grass, flowers, bushes, ...)

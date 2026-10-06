@@ -91,7 +91,7 @@ Only `container` is required. Everything else has sensible defaults.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `duration` | `number` | `600` | Total animation time in seconds (10 min) |
-| `maxHeight` | `number` | `0.35` | Max drawn plant height as a fraction of container height (0.05-1). Higher values unlock taller categories (see below) |
+| `maxHeight` | `number` | `0.35` | Max plant (stem) height as a fraction of container height (0.05-1). Higher values unlock taller categories (see below) |
 | `density` | `'sparse'` \| `'normal'` \| `'dense'` \| `'lush'` | `'normal'` | How many plants |
 | `colors.accent` | `string` | `'#F6821F'` | Primary accent color (hex) |
 | `colors.palette` | `'natural'` \| `'warm'` \| `'cool'` \| `'vibrant'` \| `'grayscale'` \| `'monotone'` | `'natural'` | Color palette |
@@ -118,7 +118,7 @@ Only `container` is required. Everything else has sensible defaults.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `maxHeight` | `number` | `0.35` | Max drawn plant height as a fraction of container height (0.05-1). Higher values unlock taller categories (see below) |
+| `maxHeight` | `number` | `0.35` | Max plant (stem) height as a fraction of container height (0.05-1). Higher values unlock taller categories (see below) |
 | `density` | `string` | `'normal'` | `'sparse'` \| `'normal'` \| `'dense'` \| `'lush'` |
 | `categories` | `string[]` | all | Filter to specific plant categories (case-insensitive; unknown names are ignored, with a warning outside production) |
 | `colors` | `object` | — | Color configuration (sub-options below) |
@@ -153,7 +153,9 @@ Seeds are wrapped modulo 1e9 into [0, 1e9), so negative seeds work, and
 seeds that differ by a multiple of 1e9 (for example `-1` and `999999999`)
 produce the same garden. A missing or non-finite seed gets a random one.
 
-**Height and categories:** `maxHeight` is a hard cap on drawn height. Each
+**Height and categories:** `maxHeight` caps each plant's stem height (after
+its type's height multiplier); flower heads, spikes and plumes can still rise
+somewhat above that line. Each
 category has a natural height range and appears only when `maxHeight` is at
 least the bottom of that range: tall flowers at 0.30 (so the default 0.35
 includes them), giant grasses at 0.40, climbers and tropical plants at 0.50,

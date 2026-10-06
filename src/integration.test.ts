@@ -11,7 +11,7 @@ import { SeededRandom } from './SeededRandom';
 import { GrowthProgress } from './GrowthProgress';
 import { SimpleEventEmitter } from './EventEmitter';
 import { GrowthProgressPool } from './GrowthProgressPool';
-import { resolveOptions, defaultOptions } from './defaults';
+import { resolveOptions } from './defaults';
 import { buildFlowerColors, buildFoliageColors } from './palettes';
 import { generatePlants, PLANT_CATEGORIES } from './plants/generator';
 import { PlantType } from './types';
@@ -24,7 +24,51 @@ import { getCompletedGenerations, getGenerationEndTimes } from './plants/generat
 import { getPlantVariation } from './plants/variations';
 import { PLANTS_PER_GENERATION } from './constants';
 import { OPTION_BOUNDS } from './constants';
+import { MAX_RNG_DRAWS_PER_PLANT } from './plants/generator';
+import { PlantCategory } from './types';
 import * as fc from 'fast-check';
+
+// The documented option contract (README option tables), pinned here
+// independently of OPTION_BOUNDS and defaultOptions so a wrong table in the
+// code cannot pass by construction
+const DOCUMENTED_RANGE = {
+  duration: [1, 86400],
+  generations: [1, 1000],
+  maxHeight: [0.05, 1],
+  speed: [0.01, 100],
+  maxPixelRatio: [0.5, 4],
+  targetFPS: [1, 120],
+  opacity: [0, 1],
+  fadeHeight: [0, 1],
+  zIndex: [-9999, 9999],
+} as const;
+const DOCUMENTED_DEFAULT = {
+  duration: 600,
+  generations: 47,
+  maxHeight: 0.35,
+  speed: 1,
+  maxPixelRatio: 2,
+  targetFPS: 30,
+  opacity: 1,
+  fadeHeight: 0,
+  zIndex: -1,
+} as const;
+const NUMERIC_KEYS = Object.keys(DOCUMENTED_RANGE) as Array<keyof typeof DOCUMENTED_RANGE>;
+/** README: seeds are "wrapped modulo 1e9 into [0, 1e9)" */
+const DOCUMENTED_SEED_RANGE = 1e9;
+const DOCUMENTED_ACCENT_WEIGHT = 0.4;
+const DOCUMENTED_DENSITIES = ['sparse', 'normal', 'dense', 'lush'] as const;
+const DOCUMENTED_PALETTES = ['natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone'] as const;
+const DOCUMENTED_CURVES = ['linear', 'ease-out', 'ease-in', 'ease-in-out'] as const;
+
+/** Mute console.warn (unconnected containers, unknown option values) per test */
+function muteWarnings(): void {
+  let spy: ReturnType<typeof vi.spyOn> | undefined;
+  beforeEach(() => {
+    spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => spy?.mockRestore());
+}
 
 describe('Integration: SeededRandom + Vec2', () => {
   it('should generate deterministic random positions', () => {
@@ -193,14 +237,9 @@ describe('Integration: GrowthProgress + Color', () => {
 });
 
 describe('Integration: generatePlants determinism', () => {
+  // "The same options produce an identical garden" is a property over every
+  // config: see 'Property: generated gardens over the full config domain'
   const base = { seed: 12345, generations: 12, density: 'dense' as const, maxHeight: 0.8 };
-
-  it('the same options produce an identical garden', () => {
-    const a = generatePlants(resolveOptions({ container: document.createElement('div'), ...base }));
-    const b = generatePlants(resolveOptions({ container: document.createElement('div'), ...base }));
-    expect(a.length).toBeGreaterThan(0);
-    expect(a).toEqual(b);
-  });
 
   it('a different seed produces a different garden', () => {
     const a = generatePlants(resolveOptions({ container: document.createElement('div'), ...base }));
@@ -323,15 +362,9 @@ describe('Integration: Color manipulation chains', () => {
 // These tests verify invariants and relationships that must hold
 // across the system to ensure correctness.
 
+// stem >= flower and the [0, 1] bounds on every phase are properties over all
+// progress values in property.test.ts ('GrowthProgress properties')
 describe('Constraint: Growth phase ordering', () => {
-  it('stem should always be >= flower at any progress', () => {
-    // Stem starts immediately and grows faster, flower starts at 50%
-    for (let p = 0; p <= 1; p += 0.05) {
-      const growth = GrowthProgress.fromProgress(p);
-      expect(growth.stem).toBeGreaterThanOrEqual(growth.flower);
-    }
-  });
-
   it('stem should reach 1 before flower reaches 1', () => {
     // Stem completes at progress ~0.67, flower at progress 1.0
     const atStemComplete = GrowthProgress.fromProgress(0.67);
@@ -349,58 +382,29 @@ describe('Constraint: Growth phase ordering', () => {
     expect(atFlowerStart.hasFlower).toBe(true);
   });
 
-  it('progress should be monotonically increasing with time', () => {
-    const delay = 100;
-    const duration = 1000;
-    let previousProgress = -1;
-
-    for (let time = 0; time <= 1200; time += 50) {
-      const growth = GrowthProgress.calculate(time, delay, duration);
-      expect(growth.progress).toBeGreaterThanOrEqual(previousProgress);
-      previousProgress = growth.progress;
-    }
-  });
-
-  it('all phases should be clamped to [0, 1]', () => {
-    // Test edge cases including negative and very large progress
-    const testCases = [-0.5, 0, 0.5, 1, 1.5, 2];
-
-    for (const p of testCases) {
-      const growth = GrowthProgress.fromProgress(p);
-      expect(growth.progress).toBeGreaterThanOrEqual(0);
-      expect(growth.progress).toBeLessThanOrEqual(1);
-      expect(growth.stem).toBeGreaterThanOrEqual(0);
-      expect(growth.stem).toBeLessThanOrEqual(1);
-      expect(growth.leaf).toBeGreaterThanOrEqual(0);
-      expect(growth.leaf).toBeLessThanOrEqual(1);
-      expect(growth.flower).toBeGreaterThanOrEqual(0);
-      expect(growth.flower).toBeLessThanOrEqual(1);
-    }
+  it('progress never decreases as time advances, for any delay and duration', () => {
+    const finite = fc.double({ noNaN: true, noDefaultInfinity: true });
+    fc.assert(
+      fc.property(
+        finite,
+        finite,
+        finite,
+        // Plant grow durations are positive (at least the 100ms floor)
+        fc.double({ min: Number.MIN_VALUE, noNaN: true, noDefaultInfinity: true }),
+        (t1, t2, delay, duration) => {
+          const [early, late] = t1 <= t2 ? [t1, t2] : [t2, t1];
+          const before = GrowthProgress.calculate(early, delay, duration).progress;
+          const after = GrowthProgress.calculate(late, delay, duration).progress;
+          expect(after).toBeGreaterThanOrEqual(before);
+        }
+      ),
+      { numRuns: 2000 }
+    );
   });
 });
 
 describe('Constraint: Determinism', () => {
-  it('SeededRandom should produce identical sequences with same seed', () => {
-    const runs = 3;
-    const sequences: number[][] = [];
-
-    for (let run = 0; run < runs; run++) {
-      const rng = new SeededRandom(42);
-      const seq: number[] = [];
-      for (let i = 0; i < 100; i++) {
-        seq.push(rng.next());
-      }
-      sequences.push(seq);
-    }
-
-    // All runs should produce identical sequences
-    for (let run = 1; run < runs; run++) {
-      for (let i = 0; i < 100; i++) {
-        expect(sequences[run][i]).toBe(sequences[0][i]);
-      }
-    }
-  });
-
+  // Same seed, same sequence: a property over all seeds in property.test.ts
   it('forked RNG should produce independent sequence from parent', () => {
     const rng = new SeededRandom(42);
 
@@ -449,84 +453,8 @@ describe('Constraint: Determinism', () => {
   });
 });
 
-describe('Constraint: Color validity', () => {
-  it('RGB values should always be clamped to 0-255', () => {
-    // Test edge cases
-    const edgeCases = [
-      new Color(-10, 128, 128),
-      new Color(300, 128, 128),
-      new Color(128, -50, 128),
-      new Color(128, 128, 500),
-    ];
-
-    for (const color of edgeCases) {
-      expect(color.r).toBeGreaterThanOrEqual(0);
-      expect(color.r).toBeLessThanOrEqual(255);
-      expect(color.g).toBeGreaterThanOrEqual(0);
-      expect(color.g).toBeLessThanOrEqual(255);
-      expect(color.b).toBeGreaterThanOrEqual(0);
-      expect(color.b).toBeLessThanOrEqual(255);
-    }
-  });
-
-  it('alpha should always be clamped to 0-1', () => {
-    const edgeCases = [
-      new Color(128, 128, 128, -0.5),
-      new Color(128, 128, 128, 1.5),
-      new Color(128, 128, 128, 0),
-      new Color(128, 128, 128, 1),
-    ];
-
-    for (const color of edgeCases) {
-      expect(color.a).toBeGreaterThanOrEqual(0);
-      expect(color.a).toBeLessThanOrEqual(1);
-    }
-  });
-
-  it('hex conversion should be reversible', () => {
-    const testColors = [
-      new Color(0, 0, 0),
-      new Color(255, 255, 255),
-      new Color(128, 64, 192),
-      new Color(255, 0, 128),
-    ];
-
-    for (const original of testColors) {
-      const hex = original.toHex();
-      const restored = Color.fromHex(hex);
-      expect(restored).not.toBeNull();
-      expect(restored!.r).toBe(original.r);
-      expect(restored!.g).toBe(original.g);
-      expect(restored!.b).toBe(original.b);
-    }
-  });
-
-  it('lighten should increase luminance or stay same', () => {
-    const colors = [
-      new Color(100, 100, 100),
-      new Color(200, 50, 50),
-      new Color(50, 150, 50),
-    ];
-
-    for (const color of colors) {
-      const lightened = color.lighten(0.2);
-      expect(lightened.luminance()).toBeGreaterThanOrEqual(color.luminance() - 0.001);
-    }
-  });
-
-  it('darken should decrease luminance or stay same', () => {
-    const colors = [
-      new Color(100, 100, 100),
-      new Color(200, 50, 50),
-      new Color(50, 150, 50),
-    ];
-
-    for (const color of colors) {
-      const darkened = color.darken(0.2);
-      expect(darkened.luminance()).toBeLessThanOrEqual(color.luminance() + 0.001);
-    }
-  });
-});
+// Color clamping, the hex round-trip and lighten/darken monotonicity are
+// properties over all colors in property.test.ts ('Color properties')
 
 describe('Constraint: Vec2 immutability', () => {
   it('operations should return new instances', () => {
@@ -592,57 +520,29 @@ describe('Constraint: GrowthProgress immutability', () => {
 // ==================== GROWTHPROGRESSPOOL INTEGRATION ====================
 
 describe('Constraint: GrowthProgressPool frame lifecycle', () => {
-  it('should produce identical results to immutable GrowthProgress', () => {
+  it('agrees exactly with immutable GrowthProgress on every input', () => {
+    // Siblings computing the same phases must agree bit for bit, hostile
+    // inputs (NaN, infinities, zero or negative durations) included
     const pool = new GrowthProgressPool({ devMode: true });
-
-    // Test various progress values
-    const testCases = [
-      { time: 0.5, delay: 0, duration: 1.0 },
-      { time: 1.0, delay: 0.5, duration: 1.0 },
-      { time: 2.0, delay: 0.3, duration: 2.0 },
-      { time: 0.8, delay: 0.2, duration: 0.8 },
-    ];
-
-    pool.beginFrame();
-
-    for (const { time, delay, duration } of testCases) {
-      const immutable = GrowthProgress.calculate(time, delay, duration);
-      const mutable = pool.acquireAndCalculate(time, delay, duration);
-
-      expect(mutable.progress).toBeCloseTo(immutable.progress, 10);
-      expect(mutable.stem).toBeCloseTo(immutable.stem, 10);
-      expect(mutable.leaf).toBeCloseTo(immutable.leaf, 10);
-      expect(mutable.flower).toBeCloseTo(immutable.flower, 10);
-    }
-
-    pool.endFrame();
-  });
-
-  it('should maintain phase ordering invariants (stem >= flower)', () => {
-    const pool = new GrowthProgressPool({ devMode: true });
-    const testProgressValues = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
-
-    pool.beginFrame();
-
-    for (const progress of testProgressValues) {
-      const time = progress * 1000;
-      const phases = pool.acquireAndCalculate(time, 0, 1000);
-
-      // Stem should always be >= flower (stem grows first)
-      expect(phases.stem).toBeGreaterThanOrEqual(phases.flower);
-
-      // All phases should be clamped to [0, 1]
-      expect(phases.progress).toBeGreaterThanOrEqual(0);
-      expect(phases.progress).toBeLessThanOrEqual(1);
-      expect(phases.stem).toBeGreaterThanOrEqual(0);
-      expect(phases.stem).toBeLessThanOrEqual(1);
-      expect(phases.leaf).toBeGreaterThanOrEqual(0);
-      expect(phases.leaf).toBeLessThanOrEqual(1);
-      expect(phases.flower).toBeGreaterThanOrEqual(0);
-      expect(phases.flower).toBeLessThanOrEqual(1);
-    }
-
-    pool.endFrame();
+    const fields = [
+      'progress', 'stem', 'leaf', 'flower', 'foliage', 'plume',
+      'isActive', 'isComplete', 'hasLeaves', 'hasFlower',
+    ] as const;
+    fc.assert(
+      fc.property(fc.double(), fc.double(), fc.double(), (time, delay, duration) => {
+        pool.beginFrame();
+        try {
+          const immutable = GrowthProgress.calculate(time, delay, duration);
+          const mutable = pool.acquireAndCalculate(time, delay, duration);
+          for (const field of fields) {
+            expect(mutable[field], field).toBe(immutable[field]);
+          }
+        } finally {
+          pool.endFrame();
+        }
+      }),
+      { numRuns: 2000 }
+    );
   });
 
   it('should allow multiple frames without issues', () => {
@@ -773,22 +673,8 @@ describe('Constraint: resolveOptions passes explicit options through', () => {
     expect(resolved.colors.accentWeight).toBe(1);
   });
 
-  it('picks a random in-range seed when none is provided', () => {
-    const config = resolveOptions({ container: document.createElement('div') });
-    expect(Number.isFinite(config.seed)).toBe(true);
-    expect(config.seed).toBeGreaterThanOrEqual(0);
-    expect(config.seed).toBeLessThan(OPTION_BOUNDS.SEED.max);
-  });
-
-  it('should preserve explicit seed across resolutions', () => {
-    const config = {
-      container: document.createElement('div'),
-      seed: 42,
-    };
-
-    const resolved = resolveOptions(config);
-    expect(resolved.seed).toBe(42);
-  });
+  // Seeds (explicit, missing, wrapped) are properties in
+  // 'Property: resolveOptions follows the documented option contract'
 });
 
 describe('Constraint: Order-independent configuration', () => {
@@ -901,12 +787,6 @@ describe('Constraint: Unique seed per resolveOptions call', () => {
     // All 10 calls should produce different seeds (extremely unlikely to collide)
     expect(seeds.size).toBe(10);
   });
-
-  it('should preserve explicit seed', () => {
-    const container = document.createElement('div');
-    const resolved = resolveOptions({ container, seed: 12345 });
-    expect(resolved.seed).toBe(12345);
-  });
 });
 
 describe('Constraint: Deep merge in preset functions', () => {
@@ -953,124 +833,287 @@ describe('Constraint: Deep merge in preset functions', () => {
   });
 });
 
-describe('Constraint: Plant timing edge cases', () => {
-  it('growDuration should never be zero', () => {
-    const container = document.createElement('div');
+// ==================== GENERATED-GARDEN PROPERTIES ====================
+// Contracts of generatePlants that hold for EVERY configuration, with each
+// knob drawn from its full documented domain. Only `generations` is bounded
+// for speed, at materialization: usually 1-40, with one draw in ten from the
+// whole 1-1000 range.
 
-    // Use extreme settings that might produce zero growDuration
-    const resolved = resolveOptions({
-      container,
-      seed: 42,
-      generations: 100,  // Many generations = short per-generation duration
-      duration: 10,      // Short total duration
-    });
-
-    const plants = generatePlants(resolved);
-
-    for (const plant of plants) {
-      // Documented floor: at least 100ms (1% of a 10s duration)
-      expect(plant.growDuration).toBeGreaterThanOrEqual(0.1);
-    }
-  });
-
-  it('plant should always complete within duration', () => {
-    const container = document.createElement('div');
-
-    const resolved = resolveOptions({
-      container,
-      seed: 42,
-      generations: 47,
-      duration: 120,
-    });
-
-    const plants = generatePlants(resolved);
-
-    for (const plant of plants) {
-      const completionTime = plant.delay + plant.growDuration;
-      expect(completionTime).toBeLessThanOrEqual(resolved.duration + 0.001);
-    }
-  });
+// The option is case-insensitive and ignores unknown names (with a warning)
+const categoryNameArb = fc.oneof(
+  { arbitrary: fc.mixedCase(fc.constantFrom(...PLANT_CATEGORIES)), weight: 4 },
+  { arbitrary: fc.string(), weight: 1 }
+);
+const categoriesArb = fc.option(fc.array(categoryNameArb, { maxLength: 6 }), { nil: undefined });
+// The four names, the documented exponent range 0.1-10, and any other finite
+// number (documented as clamped into that range)
+const timingCurveArb = fc.oneof(
+  fc.constantFrom(...DOCUMENTED_CURVES),
+  fc.double({ min: 0.1, max: 10, noNaN: true }),
+  fc.double({ noNaN: true, noDefaultInfinity: true })
+);
+const gardenConfigArb = fc.record({
+  // Any finite seed: resolveOptions wraps it into [0, 1e9)
+  seed: fc.oneof(fc.integer({ min: -2e9, max: 2e9 }), fc.double({ noNaN: true, noDefaultInfinity: true })),
+  density: fc.constantFrom(...DOCUMENTED_DENSITIES),
+  generations: fc.oneof(
+    { arbitrary: fc.integer({ min: 1, max: 40 }), weight: 9 },
+    { arbitrary: fc.integer({ min: 1, max: 1000 }), weight: 1 }
+  ),
+  duration: fc.double({ min: 1, max: 86400, noNaN: true }),
+  maxHeight: fc.double({ min: 0.05, max: 1, noNaN: true }),
+  timingCurve: timingCurveArb,
+  categories: categoriesArb,
+  colors: fc.record({
+    palette: fc.constantFrom(...DOCUMENTED_PALETTES),
+    accentWeight: fc.double({ min: 0, max: 1, noNaN: true }),
+  }),
 });
+type GardenConfig = typeof gardenConfigArb extends fc.Arbitrary<infer T> ? T : never;
 
-describe('Constraint: Options that trigger regeneration', () => {
+function growGarden(config: GardenConfig) {
+  const resolved = resolveOptions({ container: document.createElement('div'), ...config });
+  return { resolved, plants: generatePlants(resolved) };
+}
 
-  it('changing categories should produce different plants', () => {
-    const container = document.createElement('div');
+/** Every plant field except the timing ones */
+function withoutTimings(plants: PlantData[]) {
+  return plants.map(({ delay: _delay, growDuration: _growDuration, ...rest }) => rest);
+}
 
-    const allCategories = resolveOptions({
-      container,
-      seed: 42,
-      generations: 10,
-      density: 'normal',
-    });
+// Category name -> PlantCategory, derived from the enum's own member names
+// ('TallFlower' -> 'tall-flower'), independently of the generator's table
+const CATEGORY_BY_NAME = new Map(
+  Object.keys(PlantCategory)
+    .filter((key) => Number.isNaN(Number(key)))
+    .map((key) => [
+      key.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase(),
+      PlantCategory[key as keyof typeof PlantCategory],
+    ])
+);
 
-    const grassOnly = resolveOptions({
-      container,
-      seed: 42,
-      generations: 10,
-      density: 'normal',
-      categories: ['grass'],
-    });
+const GARDEN_RUNS = { numRuns: 200 };
+/** For properties that grow two gardens per run */
+const GARDEN_PAIR_RUNS = { numRuns: 100 };
 
-    const plants1 = generatePlants(allCategories);
-    const plants2 = generatePlants(grassOnly);
+/**
+ * The first plant breaking a per-plant rule, or undefined. Gardens hold up
+ * to 30,000 plants, so each run makes one assertion, not one per plant.
+ */
+const firstViolation = <T,>(items: readonly T[], ok: (item: T, i: number) => boolean) =>
+  items.find((item, i) => !ok(item, i));
 
-    // Grass-only should have fewer plant types
-    const types1 = new Set(plants1.map((p: { type: string }) => p.type));
-    const types2 = new Set(plants2.map((p: { type: string }) => p.type));
+/** Fast exact comparison of two gardens; falls back to toEqual for the diff */
+function expectSameGardens(actual: readonly object[], expected: readonly object[]): void {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) expect(actual).toEqual(expected);
+}
 
-    expect(types1.size).toBeGreaterThan(types2.size);
+describe('Property: generated gardens over the full config domain', () => {
+  muteWarnings();
 
-    // Grass-only should only contain grass types
-    for (const plant of plants2) {
-      expect(plant.type.toLowerCase()).toContain('grass');
-    }
+  it('the same options produce an identical garden', () => {
+    fc.assert(
+      fc.property(gardenConfigArb, (config) => {
+        const a = growGarden(config).plants;
+        const b = growGarden(config).plants;
+        expect(b).toHaveLength(a.length);
+        expectSameGardens(b, a);
+      }),
+      GARDEN_PAIR_RUNS
+    );
   });
 
-  it('timing curves pace generations as named: ease-out early, ease-in late', () => {
-    const avgDelay = (timingCurve: 'linear' | 'ease-out' | 'ease-in' | 'ease-in-out') => {
-      const plants = generatePlants(
-        resolveOptions({ container: document.createElement('div'), seed: 42, generations: 10, timingCurve })
-      );
-      return plants.reduce((sum, p) => sum + p.delay, 0) / plants.length;
-    };
-    const linear = avgDelay('linear');
-
-    // 'ease-out' = fast start: generations arrive early, so delays are lower
-    expect(avgDelay('ease-out')).toBeLessThan(linear * 0.9);
-    // 'ease-in' = slow start: generations arrive late
-    expect(avgDelay('ease-in')).toBeGreaterThan(linear * 1.1);
-    // 'ease-in-out' is symmetric around the midpoint
-    expect(avgDelay('ease-in-out')).toBeCloseTo(linear, -1);
+  it('every plant draws within maxHeight', () => {
+    // Renderers draw maxHeight x the type's heightMultiplier
+    const drawn = (p: PlantData) => p.maxHeight * getPlantVariation(p.type).heightMultiplier;
+    fc.assert(
+      fc.property(gardenConfigArb, (config) => {
+        const { resolved, plants } = growGarden(config);
+        const tallest = firstViolation(plants, (p) => drawn(p) <= resolved.maxHeight);
+        expect(tallest && `${tallest.type} draws ${drawn(tallest)} > ${resolved.maxHeight}`).toBeUndefined();
+      }),
+      {
+        ...GARDEN_RUNS,
+        // Production finding (1-ulp overshoot): bamboo-tall draws 0.7244963369963375
+        examples: [
+          [
+            {
+              seed: 0,
+              density: 'dense',
+              generations: 1,
+              duration: 1,
+              maxHeight: 0.7244963369963374,
+              timingCurve: 0,
+              categories: undefined,
+              colors: { palette: 'natural', accentWeight: 0 },
+            },
+          ],
+        ],
+      }
+    );
   });
 
-  it('changing duration should scale plant timings', () => {
-    const container = document.createElement('div');
+  it('every generation holds a plant count within its density range', () => {
+    fc.assert(
+      fc.property(gardenConfigArb, (config) => {
+        const { resolved, plants } = growGarden(config);
+        const [min, max] = PLANTS_PER_GENERATION[resolved.density];
+        const perGeneration = new Array<number>(resolved.generations).fill(0);
+        const stray = firstViolation(
+          plants,
+          (p) => Number.isInteger(p.generation) && p.generation >= 0 && p.generation < resolved.generations
+        );
+        expect(stray?.generation).toBeUndefined();
+        for (const p of plants) perGeneration[p.generation]++;
+        const g = perGeneration.findIndex((count) => count < min || count > max);
+        expect(g < 0 ? undefined : `generation ${g}: ${perGeneration[g]} plants`).toBeUndefined();
+      }),
+      GARDEN_RUNS
+    );
+  });
 
-    const short = resolveOptions({
-      container,
-      seed: 42,
-      generations: 10,
-      duration: 60,
-    });
+  it('generation g ends when every plant up to g has grown, capped at the duration', () => {
+    fc.assert(
+      fc.property(gardenConfigArb, (config) => {
+        const { resolved, plants } = growGarden(config);
+        const { generations, duration } = resolved;
+        // From the definition: the latest end among all plants of generations
+        // <= g (bucketed by generation, then accumulated), capped at the duration
+        const latestOf = new Array<number>(generations).fill(0);
+        for (const p of plants) latestOf[p.generation] = Math.max(latestOf[p.generation], p.delay + p.growDuration);
+        const expected = latestOf.map((_, g) => Math.min(duration, Math.max(...latestOf.slice(0, g + 1))));
+        expect(getGenerationEndTimes(plants, generations, duration)).toEqual(expected);
+      }),
+      GARDEN_RUNS
+    );
+  });
 
-    const long = resolveOptions({
-      container,
-      seed: 42,
-      generations: 10,
-      duration: 120,
-    });
+  it('growDuration never falls below the floor of 100ms or 1% of the duration', () => {
+    fc.assert(
+      fc.property(gardenConfigArb, (config) => {
+        const { resolved, plants } = growGarden(config);
+        const floor = Math.max(0.1, resolved.duration * 0.01);
+        expect(firstViolation(plants, (p) => p.growDuration >= floor)?.growDuration).toBeUndefined();
+      }),
+      GARDEN_RUNS
+    );
+  });
 
-    const plants1 = generatePlants(short);
-    const plants2 = generatePlants(long);
+  it('every plant starts and finishes within the duration', () => {
+    fc.assert(
+      fc.property(gardenConfigArb, (config) => {
+        const { resolved, plants } = growGarden(config);
+        const { duration } = resolved;
+        const late = firstViolation(
+          plants,
+          (p) => p.delay >= 0 && p.delay < duration && p.delay + p.growDuration <= duration
+        );
+        expect(late && `delay ${late.delay} + ${late.growDuration} vs ${duration}`).toBeUndefined();
+      }),
+      {
+        ...GARDEN_RUNS,
+        // Production finding (1-ulp overshoot): ends at 476.6014207964744
+        examples: [
+          [
+            {
+              seed: 0,
+              density: 'sparse',
+              generations: 1,
+              duration: 476.6014207964743,
+              maxHeight: 0.05,
+              timingCurve: 0,
+              categories: undefined,
+              colors: { palette: 'natural', accentWeight: 0 },
+            },
+          ],
+        ],
+      }
+    );
+  });
 
-    // Maximum delay in long duration should be roughly 2x short duration
-    const maxDelay1 = Math.max(...plants1.map((p: { delay: number }) => p.delay));
-    const maxDelay2 = Math.max(...plants2.map((p: { delay: number }) => p.delay));
+  it('plants are sorted tallest-first, so shorter plants draw in front', () => {
+    fc.assert(
+      fc.property(gardenConfigArb, (config) => {
+        const { plants } = growGarden(config);
+        const i = plants.findIndex((p, k) => k > 0 && p.maxHeight > plants[k - 1].maxHeight);
+        expect(i < 0 ? undefined : `plant ${i} is taller than plant ${i - 1}`).toBeUndefined();
+      }),
+      GARDEN_RUNS
+    );
+  });
 
-    // Allow some tolerance for randomization
-    expect(maxDelay2 / maxDelay1).toBeGreaterThan(1.5);
-    expect(maxDelay2 / maxDelay1).toBeLessThan(2.5);
+  it('no two plants share a random stream', () => {
+    // Each plant draws up to MAX_RNG_DRAWS_PER_PLANT values from consecutive
+    // seeds, so per-plant seeds must be at least that far apart
+    fc.assert(
+      fc.property(gardenConfigArb, (config) => {
+        const seeds = growGarden(config)
+          .plants.map((p) => p.seed)
+          .sort((a, b) => a - b);
+        const i = seeds.findIndex((seed, k) => k > 0 && seed - seeds[k - 1] < MAX_RNG_DRAWS_PER_PLANT);
+        expect(i < 0 ? undefined : `seeds ${seeds[i - 1]} and ${seeds[i]}`).toBeUndefined();
+      }),
+      GARDEN_RUNS
+    );
+  });
+
+  it('the category reference covers exactly the public category names', () => {
+    expect([...CATEGORY_BY_NAME.keys()].sort()).toEqual([...PLANT_CATEGORIES].sort());
+  });
+
+  it('a category filter grows only the categories it names', () => {
+    fc.assert(
+      fc.property(gardenConfigArb, (config) => {
+        const selected = new Set(
+          (config.categories ?? [])
+            .map((name) => CATEGORY_BY_NAME.get(name.toLowerCase()))
+            .filter((c): c is PlantCategory => c !== undefined)
+        );
+        // No known name selected means no filter: there is nothing to check
+        if (selected.size === 0) return;
+        const { plants } = growGarden(config);
+        const stray = firstViolation(plants, (p) => p.category !== undefined && selected.has(p.category));
+        expect(stray && `${stray.type} (category ${stray.category})`).toBeUndefined();
+      }),
+      GARDEN_RUNS
+    );
+  });
+
+  it('the timing curve changes plant timings and nothing else', () => {
+    fc.assert(
+      fc.property(gardenConfigArb, timingCurveArb, (config, otherCurve) => {
+        const a = growGarden(config).plants;
+        const b = growGarden({ ...config, timingCurve: otherCurve }).plants;
+        expectSameGardens(withoutTimings(b), withoutTimings(a));
+      }),
+      GARDEN_PAIR_RUNS
+    );
+  });
+
+  it('scaling the duration scales plant timings and changes nothing else', () => {
+    // Above 10s the 1% term of the grow-duration floor dominates its 100ms
+    // term, so every timing is proportional to the duration. The timings are
+    // short chains of rounded multiplications and additions of values up to
+    // the duration, so they scale to within a few ulps of the duration
+    // (1e-12 relative is ~4500 ulps of headroom), not exactly.
+    const scaledDuration = fc.double({ min: 10, max: 86400, noNaN: true });
+    fc.assert(
+      fc.property(gardenConfigArb, scaledDuration, scaledDuration, (config, d1, d2) => {
+        const a = growGarden({ ...config, duration: d1 }).plants;
+        const b = growGarden({ ...config, duration: d2 }).plants;
+        expectSameGardens(withoutTimings(b), withoutTimings(a));
+        const k = d2 / d1;
+        const tolerance = 1e-12 * d2;
+        const off = firstViolation(
+          b,
+          (p, i) =>
+            Math.abs(p.delay - a[i].delay * k) <= tolerance &&
+            Math.abs(p.growDuration - a[i].growDuration * k) <= tolerance
+        );
+        expect(off && `plant ${off.id}: ${off.delay}/${off.growDuration}`).toBeUndefined();
+      }),
+      GARDEN_PAIR_RUNS
+    );
   });
 });
 
@@ -1353,45 +1396,6 @@ describe('Constraint: Category validation warnings', () => {
   });
 });
 
-describe('Constraint: Growth duration minimum enforcement', () => {
-  it('should enforce minimum grow duration even with extreme timing curves', () => {
-    const resolved = resolveOptions({
-      container: document.createElement('div'),
-      seed: 7,
-      generations: 100,
-      duration: 10,
-      timingCurve: 3, // Extreme ease-out
-    });
-
-    const plants = generatePlants(resolved);
-
-    for (const plant of plants) {
-      // Documented floor: at least 100ms (1% of a 10s duration)
-      expect(plant.growDuration).toBeGreaterThanOrEqual(0.1);
-    }
-  });
-
-  it('should have all plants visible before animation ends', () => {
-    const resolved = resolveOptions({
-      container: document.createElement('div'),
-      seed: 7,
-      generations: 50,
-      duration: 60,
-      timingCurve: 'ease-out',
-    });
-
-    const plants = generatePlants(resolved);
-
-    for (const plant of plants) {
-      // Every plant should start and finish within the duration
-      expect(plant.delay).toBeLessThan(resolved.duration);
-      expect(plant.delay + plant.growDuration).toBeLessThanOrEqual(
-        resolved.duration + 0.01 // Small tolerance for floating point
-      );
-    }
-  });
-});
-
 // ==================== CONFIGURATION CONSTRUCTIBILITY ====================
 // Every shipped theme/preset must produce options that survive the full
 // resolve -> generate pipeline. Guards against undefined-clobbering merges.
@@ -1461,21 +1465,9 @@ describe('Constraint: every built-in theme and preset is constructible', () => {
 // ==================== SEED UNIQUENESS ====================
 
 describe('Constraint: plant seeds are unique within a garden', () => {
-  it('never reuses a per-plant seed across generations', () => {
-    for (const density of ['normal', 'dense', 'lush'] as const) {
-      const resolved = resolveOptions({
-        container: document.createElement('div'),
-        seed: 42,
-        generations: 20,
-        duration: 60,
-        density,
-      });
-      const plants = generatePlants(resolved);
-      const seeds = new Set(plants.map((p) => p.seed));
-      expect(seeds.size, `density "${density}"`).toBe(plants.length);
-    }
-  });
-
+  // Per-plant seed uniqueness (no shared random stream) is a property over all
+  // configs in 'Property: generated gardens over the full config domain'.
+  // This pins the observable symptom of the old stride bug.
   it('does not place visually identical plants at the same x position', () => {
     const resolved = resolveOptions({
       container: document.createElement('div'),
@@ -1487,27 +1479,6 @@ describe('Constraint: plant seeds are unique within a garden', () => {
     const plants = generatePlants(resolved);
     const signatures = new Set(plants.map((p) => `${p.x}:${p.type}:${p.flowerColor}`));
     expect(signatures.size).toBe(plants.length);
-  });
-});
-
-// ==================== PAINTER'S ORDERING ====================
-
-describe('Constraint: painter ordering puts shorter plants in front', () => {
-  it('sorts plants tallest-first so later (shorter) draws overlay them', () => {
-    const resolved = resolveOptions({
-      container: document.createElement('div'),
-      seed: 42,
-      generations: 5,
-      duration: 60,
-    });
-    const plants = generatePlants(resolved);
-    // Guard against a vacuous pass: an empty or single-height garden is
-    // trivially "sorted" under any comparator
-    expect(plants.length).toBeGreaterThan(1);
-    expect(plants[0].maxHeight).toBeGreaterThan(plants[plants.length - 1].maxHeight);
-    for (let i = 1; i < plants.length; i++) {
-      expect(plants[i].maxHeight).toBeLessThanOrEqual(plants[i - 1].maxHeight);
-    }
   });
 });
 
@@ -1580,65 +1551,6 @@ describe('Exhaustive: every plant type can be grown through its category', () =>
     const grown = new Set([...grownBy().values()].flatMap((plants) => plants.map((p) => p.type)));
     const neverGrown = Object.values(PlantType).filter((type) => !grown.has(type));
     expect(neverGrown).toEqual([]);
-  });
-});
-
-// ==================== OPTION SANITIZATION ====================
-
-describe('Constraint: non-finite numeric options fall back to defaults', () => {
-  const numericKeys = [
-    'duration',
-    'generations',
-    'maxHeight',
-    'speed',
-    'maxPixelRatio',
-    'targetFPS',
-    'opacity',
-    'fadeHeight',
-    'zIndex',
-  ] as const;
-
-  it.each(numericKeys)('sanitizes %s', (key) => {
-    for (const bad of [NaN, Infinity, -Infinity]) {
-      const resolved = resolveOptions({
-        container: document.createElement('div'),
-        seed: 42,
-        [key]: bad,
-      } as never);
-      expect(resolved[key], `${key} = ${bad}`).toBe(defaultOptions[key]);
-    }
-  });
-
-  it('sanitizes a NaN seed to a random finite seed', () => {
-    const resolved = resolveOptions({
-      container: document.createElement('div'),
-      seed: NaN,
-    });
-    expect(Number.isFinite(resolved.seed)).toBe(true);
-  });
-
-  it('wraps seeds modulo the seed range instead of clamping them to zero', () => {
-    const container = document.createElement('div');
-    const { max } = OPTION_BOUNDS.SEED;
-    const a = resolveOptions({ container, seed: -5 });
-    const b = resolveOptions({ container, seed: 0 });
-    const c = resolveOptions({ container, seed: -6 });
-    expect(a.seed).not.toBe(b.seed);
-    expect(a.seed).not.toBe(c.seed);
-    // Seeds a whole range apart coincide, as normalizeSeed documents
-    expect(resolveOptions({ container, seed: -1 }).seed).toBe(
-      resolveOptions({ container, seed: max - 1 }).seed
-    );
-  });
-
-  it('clamps accentWeight into [0, 1]', () => {
-    const container = document.createElement('div');
-    const high = resolveOptions({ container, colors: { accentWeight: 5 } });
-    const low = resolveOptions({ container, colors: { accentWeight: -1 } });
-    const bad = resolveOptions({ container, colors: { accentWeight: NaN } });
-    expect(high.colors.accentWeight).toBe(1);
-    expect(low.colors.accentWeight).toBe(0);
-    expect(bad.colors.accentWeight).toBe(0.4); // documented default
   });
 });
 
@@ -1732,185 +1644,276 @@ describe('Exhaustive: config lattice is constructible end-to-end', () => {
         });
         const plants = generatePlants(resolved);
         expect(plants.length, `${density} x maxHeight ${maxHeight}`).toBeGreaterThan(0);
-        for (const plant of plants) {
-          expect(plant.maxHeight).toBeLessThanOrEqual(maxHeight + 1e-9);
-        }
       }
     }
   });
 });
 
-// ==================== INVALID OPTION VALUES ====================
+// ==================== OPTION CONTRACT PROPERTIES ====================
+// resolveOptions is the trust boundary for all user input. For ANY shape of
+// partial options, each option must resolve exactly as documented: a valid
+// value passes through (numbers clamped into range), anything else falls back
+// to the documented default. One property per option contract; each draws
+// the whole fuzzy options object, so no option can leak into another.
 
-describe('Constraint: invalid enum-like options fall back instead of crashing', () => {
-  it('unknown density falls back to normal', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      const resolved = resolveOptions({
-        container: document.createElement('div'),
-        seed: 42,
-        density: 'enormous' as never,
-      });
-      expect(resolved.density).toBe('normal');
-      expect(() => generatePlants(resolved)).not.toThrow();
-    } finally {
-      warnSpy.mockRestore();
-    }
-  });
+/** Clamp written as the documented range check, not as min/max calls */
+const clampTo = (v: number, [lo, hi]: readonly [number, number]) => (v < lo ? lo : v > hi ? hi : v);
+const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
-  it('unknown palette falls back to natural', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      const resolved = resolveOptions({
-        container: document.createElement('div'),
-        seed: 42,
-        colors: { palette: 'rainbow' as never },
-      });
-      expect(resolved.colors.palette).toBe('natural');
-      expect(() => generatePlants(resolved)).not.toThrow();
-    } finally {
-      warnSpy.mockRestore();
-    }
-  });
-
-  it('non-array categories are ignored', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      const resolved = resolveOptions({
-        container: document.createElement('div'),
-        seed: 42,
-        categories: 'rose' as never,
-      });
-      expect(resolved.categories).toBeNull();
-      expect(() => generatePlants(resolved)).not.toThrow();
-    } finally {
-      warnSpy.mockRestore();
-    }
-  });
-
-  it('non-finite numeric timingCurve falls back to linear', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      const resolved = resolveOptions({
-        container: document.createElement('div'),
-        seed: 42,
-        timingCurve: NaN,
-      });
-      expect(resolved.timingCurve).toBe('linear');
-      const plants = generatePlants(resolved);
-      for (const plant of plants) {
-        expect(Number.isFinite(plant.delay)).toBe(true);
-        expect(Number.isFinite(plant.growDuration)).toBe(true);
-      }
-    } finally {
-      warnSpy.mockRestore();
-    }
-  });
-});
-
-// ==================== TOTAL-FUNCTION PROPERTY ====================
-// resolveOptions is the trust boundary for all user input: for ANY shape of
-// partial options it must return a valid, finite, generatable configuration.
-
-describe('Property: resolveOptions is total over fuzzy partial options', () => {
-  const fuzzyNumber = fc.oneof(
+/** Every double (NaN, infinities and -0 included), plus dense draws in and around the range */
+const fuzzyNumberNear = ([lo, hi]: readonly [number, number]) =>
+  fc.oneof(
     fc.double(),
     fc.integer(),
-    fc.constant(NaN),
-    fc.constant(Infinity),
-    fc.constant(-Infinity),
-    fc.constant(undefined)
+    fc.double({ min: lo, max: hi, noNaN: true }),
+    fc.double({ min: lo - (hi - lo), max: hi + (hi - lo), noNaN: true }),
+    fc.constantFrom(NaN, Infinity, -Infinity, lo, hi),
+    fc.constantFrom(undefined, null, true, '5', '')
   );
-  const fuzzyColors = fc.record(
-    {
-      accent: fc.oneof(fc.constant('#F6821F'), fc.constant('#fff'), fc.constant(undefined)),
-      palette: fc.oneof(
-        fc.constantFrom('natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone'),
-        fc.string(),
-        fc.constant(undefined)
-      ),
-      flowerColors: fc.oneof(
-        fc.array(fc.constantFrom('#ff0000', '#00ff00')),
-        fc.constant(undefined)
-      ),
-      foliageColors: fc.oneof(
-        fc.array(fc.constantFrom('#112233', '#445566')),
-        fc.constant(undefined)
-      ),
-      accentWeight: fuzzyNumber,
-    },
-    { requiredKeys: [] }
-  );
+type FuzzyOptions = Record<string, unknown>;
+const fuzzyColorsArb = fc.record(
+  {
+    accent: fc.oneof(fc.constantFrom('#F6821F', '#fff'), fc.string(), fc.constant(undefined)),
+    palette: fc.oneof(fc.constantFrom(...DOCUMENTED_PALETTES), fc.string(), fc.anything()),
+    flowerColors: fc.oneof(fc.array(fc.constantFrom('#ff0000', '#00ff00')), fc.anything()),
+    foliageColors: fc.oneof(fc.array(fc.constantFrom('#112233', '#445566')), fc.anything()),
+    accentWeight: fuzzyNumberNear([0, 1]),
+  },
+  { requiredKeys: [] }
+);
+const fuzzyOptionsArb: fc.Arbitrary<FuzzyOptions> = fc.record(
+  {
+    ...Object.fromEntries(NUMERIC_KEYS.map((key) => [key, fuzzyNumberNear(DOCUMENTED_RANGE[key])])),
+    seed: fc.oneof(fuzzyNumberNear([0, DOCUMENTED_SEED_RANGE]), fc.maxSafeInteger()),
+    density: fc.oneof(fc.constantFrom(...DOCUMENTED_DENSITIES), fc.string(), fc.anything()),
+    timingCurve: fc.oneof(fc.constantFrom(...DOCUMENTED_CURVES), fc.double(), fc.string(), fc.anything()),
+    categories: fc.oneof(
+      fc.array(fc.mixedCase(fc.constantFrom(...PLANT_CATEGORIES))),
+      fc.array(fc.string()),
+      fc.array(fc.anything()),
+      fc.anything()
+    ),
+    colors: fc.oneof(fuzzyColorsArb, fc.anything()),
+  },
+  { requiredKeys: [] }
+);
+const resolveFuzzy = (options: FuzzyOptions) =>
+  resolveOptions({ container: document.createElement('div'), ...options } as never);
+/** The colors object as resolveOptions sees it (non-objects are ignored) */
+const fuzzyColorsOf = (options: FuzzyOptions): Record<string, unknown> =>
+  typeof options.colors === 'object' && options.colors !== null
+    ? (options.colors as Record<string, unknown>)
+    : {};
 
-  const fuzzyOptions = fc.record(
-    {
-      duration: fuzzyNumber,
-      generations: fuzzyNumber,
-      maxHeight: fuzzyNumber,
-      speed: fuzzyNumber,
-      maxPixelRatio: fuzzyNumber,
-      targetFPS: fuzzyNumber,
-      opacity: fuzzyNumber,
-      fadeHeight: fuzzyNumber,
-      zIndex: fuzzyNumber,
-      seed: fuzzyNumber,
-      timingCurve: fc.oneof(
-        fc.constantFrom('linear', 'ease-out', 'ease-in', 'ease-in-out'),
-        fuzzyNumber
-      ),
-      density: fc.oneof(
-        fc.constantFrom('sparse', 'normal', 'dense', 'lush'),
-        fc.string(),
-        fc.constant(undefined)
-      ),
-      colors: fc.oneof(fuzzyColors, fc.constant(undefined)),
-    },
-    { requiredKeys: [] }
-  );
+/** Exact `v mod 1e9` in [0, 1e9): BigInt for the integer part, then one rounding */
+function wrapSeedReference(v: number): number {
+  const range = BigInt(DOCUMENTED_SEED_RANGE);
+  const whole = Math.trunc(v);
+  const fraction = v - whole; // exact
+  let wrapped = Number(((BigInt(whole) % range) + range) % range);
+  if (fraction < 0 && wrapped === 0) wrapped = DOCUMENTED_SEED_RANGE;
+  const result = wrapped + fraction; // the one rounding step
+  // A true value within half an ulp below 1e9 rounds to the range end, which wraps to 0
+  return result === DOCUMENTED_SEED_RANGE ? 0 : result;
+}
 
-  it('never throws and always yields a finite, generatable configuration', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      fc.assert(
-        fc.property(fuzzyOptions, (options) => {
-          const resolved = resolveOptions({
-            container: document.createElement('div'),
-            ...(options as object),
-          } as never);
+const OPTION_RUNS = { numRuns: 1000 };
 
-          for (const key of [
-            'duration', 'generations', 'maxHeight', 'speed', 'maxPixelRatio',
-            'targetFPS', 'opacity', 'fadeHeight', 'zIndex', 'seed',
-          ] as const) {
-            expect(Number.isFinite(resolved[key]), key).toBe(true);
-          }
-          expect(Array.isArray(resolved.colors.flowerColors)).toBe(true);
-          expect(Array.isArray(resolved.colors.foliageColors)).toBe(true);
-          expect(resolved.colors.accentWeight).toBeGreaterThanOrEqual(0);
-          expect(resolved.colors.accentWeight).toBeLessThanOrEqual(1);
-          if (typeof resolved.timingCurve === 'number') {
-            expect(Number.isFinite(resolved.timingCurve)).toBe(true);
-          }
+describe('Property: resolveOptions follows the documented option contract', () => {
+  muteWarnings();
 
-          // The resolved config must survive generation
-          const plants = generatePlants(resolved);
-          expect(plants.length).toBeGreaterThan(0);
-        }),
-        { numRuns: 150 }
-      );
-    } finally {
-      warnSpy.mockRestore();
-    }
+  it.each(NUMERIC_KEYS)('%s: finite numbers clamp into range, anything else is the default', (key) => {
+    const range = DOCUMENTED_RANGE[key];
+    const [lo, hi] = range;
+    fc.assert(
+      fc.property(fuzzyOptionsArb, (options) => {
+        const v = options[key];
+        const expected = isFiniteNumber(v) ? clampTo(v, range) : DOCUMENTED_DEFAULT[key];
+        const actual = resolveFuzzy(options)[key];
+        // === rather than toBe: -0 and 0 are the same option value
+        expect(actual === expected, `${key}: ${String(v)} -> ${actual}, expected ${expected}`).toBe(true);
+      }),
+      {
+        ...OPTION_RUNS,
+        // Regressions: non-finite values once resolved to 0 or leaked through
+        examples: [NaN, Infinity, -Infinity, lo, hi, lo - 1000, hi + 1000].map((v): [FuzzyOptions] => [{ [key]: v }]),
+      }
+    );
   });
 
-  it('is idempotent for already-resolved values', () => {
-    const container = document.createElement('div');
-    const once = resolveOptions({ container, seed: 42, duration: 120, generations: 9 });
-    const twice = resolveOptions({ ...once, categories: once.categories ?? undefined });
-    expect(twice.seed).toBe(once.seed);
-    expect(twice.duration).toBe(once.duration);
-    expect(twice.generations).toBe(once.generations);
-    expect(twice.colors).toEqual(once.colors);
+  it('colors.accentWeight: finite numbers clamp into [0, 1], anything else is 0.4', () => {
+    fc.assert(
+      fc.property(fuzzyOptionsArb, (options) => {
+        const v = fuzzyColorsOf(options).accentWeight;
+        const expected = isFiniteNumber(v) ? clampTo(v, [0, 1]) : DOCUMENTED_ACCENT_WEIGHT;
+        const actual = resolveFuzzy(options).colors.accentWeight;
+        expect(actual === expected, `${String(v)} -> ${actual}, expected ${expected}`).toBe(true);
+      }),
+      {
+        ...OPTION_RUNS,
+        // Regressions: out-of-range weights were once passed through unclamped
+        examples: [[{ colors: { accentWeight: 5 } }], [{ colors: { accentWeight: -1 } }], [{ colors: { accentWeight: NaN } }]],
+      }
+    );
+  });
+
+  it('a finite seed wraps to exactly seed mod 1e9', () => {
+    const finiteSeed = fc.oneof(
+      fc.double({ noNaN: true, noDefaultInfinity: true }),
+      fc.integer({ min: -3 * DOCUMENTED_SEED_RANGE, max: 3 * DOCUMENTED_SEED_RANGE }),
+      fc.maxSafeInteger()
+    );
+    fc.assert(
+      fc.property(finiteSeed, (seed) => {
+        const actual = resolveFuzzy({ seed }).seed;
+        expect(actual).toBeGreaterThanOrEqual(0);
+        expect(actual).toBeLessThan(DOCUMENTED_SEED_RANGE);
+        expect(actual).toBe(wrapSeedReference(seed));
+      }),
+      {
+        ...OPTION_RUNS,
+        examples: [
+          [-1],
+          [-5],
+          [-6],
+          [0],
+          [DOCUMENTED_SEED_RANGE + 5],
+          // Production finding: in-range fractional seeds are changed
+          // (0.3 -> 0.2999999523162842, 5e-324 -> 0)
+          [0.3],
+          [5e-324],
+        ],
+      }
+    );
+  });
+
+  it('seeds that differ by a multiple of 1e9 give the same seed', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: -3 * DOCUMENTED_SEED_RANGE, max: 3 * DOCUMENTED_SEED_RANGE }),
+        fc.integer({ min: -1000, max: 1000 }),
+        (seed, k) => {
+          expect(resolveFuzzy({ seed: seed + k * DOCUMENTED_SEED_RANGE }).seed).toBe(
+            resolveFuzzy({ seed }).seed
+          );
+        }
+      ),
+      // Regression: the README's own example, -1 and 999999999
+      { ...OPTION_RUNS, examples: [[-1, 1]] }
+    );
+  });
+
+  it('a missing, non-finite or non-numeric seed becomes a random seed in [0, 1e9)', () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(fc.constantFrom(undefined, null, NaN, Infinity, -Infinity, true, '42'), fc.string(), fc.anything()),
+        (seed) => {
+          fc.pre(!isFiniteNumber(seed));
+          const actual = resolveFuzzy({ seed }).seed;
+          expect(Number.isFinite(actual)).toBe(true);
+          expect(actual).toBeGreaterThanOrEqual(0);
+          expect(actual).toBeLessThan(DOCUMENTED_SEED_RANGE);
+        }
+      ),
+      OPTION_RUNS
+    );
+  });
+
+  it('density: a documented name passes through, anything else is normal', () => {
+    fc.assert(
+      fc.property(fuzzyOptionsArb, (options) => {
+        const v = options.density;
+        const expected = (DOCUMENTED_DENSITIES as readonly unknown[]).includes(v) ? v : 'normal';
+        expect(resolveFuzzy(options).density).toBe(expected);
+      }),
+      { ...OPTION_RUNS, examples: [[{ density: 'enormous' }], [{ density: 'Lush' }]] }
+    );
+  });
+
+  it('colors.palette: a documented name passes through, anything else is natural', () => {
+    fc.assert(
+      fc.property(fuzzyOptionsArb, (options) => {
+        const v = fuzzyColorsOf(options).palette;
+        const expected = (DOCUMENTED_PALETTES as readonly unknown[]).includes(v) ? v : 'natural';
+        expect(resolveFuzzy(options).colors.palette).toBe(expected);
+      }),
+      { ...OPTION_RUNS, examples: [[{ colors: { palette: 'rainbow' } }]] }
+    );
+  });
+
+  it('timingCurve: a documented name or finite number passes through, anything else is linear', () => {
+    fc.assert(
+      fc.property(fuzzyOptionsArb, (options) => {
+        const v = options.timingCurve;
+        const valid = (DOCUMENTED_CURVES as readonly unknown[]).includes(v) || isFiniteNumber(v);
+        expect(resolveFuzzy(options).timingCurve).toBe(valid ? v : 'linear');
+      }),
+      {
+        ...OPTION_RUNS,
+        examples: [
+          [{ timingCurve: NaN }],
+          [{ timingCurve: Infinity }],
+          // Production finding: unknown strings pass through unresolved
+          [{ timingCurve: '' }],
+          [{ timingCurve: 'bogus' }],
+        ],
+      }
+    );
+  });
+
+  it('categories: an array of names passes through, anything else is null (no filter)', () => {
+    // Only arrays of strings have a documented resolved value; arrays holding
+    // other values are covered by the totality property below
+    fc.assert(
+      fc.property(fuzzyOptionsArb, (options) => {
+        const v = options.categories;
+        const resolved = resolveFuzzy(options).categories;
+        if (Array.isArray(v)) {
+          if (v.every((name) => typeof name === 'string')) expect(resolved).toEqual(v);
+        } else {
+          expect(resolved).toBeNull();
+        }
+      }),
+      { ...OPTION_RUNS, examples: [[{ categories: 'rose' }], [{ categories: null }]] }
+    );
+  });
+
+  it('custom color lists: the string entries of an array pass through, anything else is empty', () => {
+    fc.assert(
+      fc.property(fuzzyOptionsArb, (options) => {
+        const colors = fuzzyColorsOf(options);
+        const resolved = resolveFuzzy(options).colors;
+        for (const key of ['flowerColors', 'foliageColors'] as const) {
+          const v = colors[key];
+          const expected = Array.isArray(v) ? v.filter((c: unknown) => typeof c === 'string') : [];
+          expect(resolved[key], key).toEqual(expected);
+        }
+      }),
+      // Regression: a non-string entry crashed palette building (hex.replace)
+      { ...OPTION_RUNS, examples: [[{ colors: { foliageColors: [{}] } }]] }
+    );
+  });
+
+  it('never throws, and the resolved configuration always generates plants', () => {
+    fc.assert(
+      fc.property(fuzzyOptionsArb, (options) => {
+        const plants = generatePlants(resolveFuzzy(options));
+        expect(plants.length).toBeGreaterThan(0);
+      }),
+      // Production finding: a non-string category name throws a TypeError
+      { numRuns: 300, examples: [[{ categories: [0] }]] }
+    );
+  });
+
+  it('is idempotent: resolving a resolved configuration changes nothing', () => {
+    fc.assert(
+      fc.property(fuzzyOptionsArb, (options) => {
+        const once = resolveFuzzy(options);
+        expect(resolveOptions(once as never)).toEqual(once);
+      }),
+      // Production finding: a wrapped fractional seed wraps again to a new value
+      { ...OPTION_RUNS, examples: [[{ seed: -0.000001966953277587891 }]] }
+    );
   });
 });
 
@@ -1948,30 +1951,8 @@ describe('Constraint: partial-config merges ignore explicit undefined', () => {
 // ==================== GENERATION BOUNDARY MATH ====================
 
 describe('Constraint: generation boundaries come from the plants themselves', () => {
-  const curves = ['linear', 'ease-out', 'ease-in', 'ease-in-out', 3, 0.4] as const;
-
-  it.each(curves)('generation g ends when every plant up to g has grown (%s)', (timingCurve) => {
-    const resolved = resolveOptions({
-      container: document.createElement('div'),
-      seed: 42,
-      generations: 12,
-      duration: 60,
-      timingCurve,
-    });
-    const plants = generatePlants(resolved);
-    const ends = getGenerationEndTimes(plants, 12, 60);
-
-    expect(ends).toHaveLength(12);
-    expect(ends[ends.length - 1]).toBe(60);
-    for (let g = 0; g < 12; g++) {
-      const latest = Math.max(
-        ...plants.filter((p) => p.generation <= g).map((p) => p.delay + p.growDuration)
-      );
-      expect(ends[g]).toBeCloseTo(Math.min(60, latest), 9);
-      if (g > 0) expect(ends[g]).toBeGreaterThanOrEqual(ends[g - 1]);
-    }
-  });
-
+  // The end times of real gardens, for every config, are a property in
+  // 'Property: generated gardens over the full config domain'
   it('a later generation never completes before an earlier one', () => {
     // Generation 0 has a slow plant that outlasts all of generation 1
     const plants = [
@@ -1984,41 +1965,33 @@ describe('Constraint: generation boundaries come from the plants themselves', ()
     expect(getGenerationEndTimes(plants, 3, 9.5)).toEqual([9, 9, 9.5]);
   });
 
-  it('counts the generations whose end time has passed', () => {
-    const ends = [1, 2.5, 2.5, 7, 10];
-    expect(getCompletedGenerations(0, ends)).toBe(0);
-    expect(getCompletedGenerations(0.999, ends)).toBe(0);
-    expect(getCompletedGenerations(1, ends)).toBe(1);
-    expect(getCompletedGenerations(2.5, ends)).toBe(3); // shared end time
-    expect(getCompletedGenerations(9.99, ends)).toBe(4);
-    expect(getCompletedGenerations(10, ends)).toBe(5);
-    expect(getCompletedGenerations(250, ends)).toBe(5); // capped
-  });
-
-  it('is monotone in time and bounded by the generation count', () => {
+  it('counts exactly the generations whose end time has passed', () => {
+    // Every time (negative, zero, NaN, infinite) against any ascending end
+    // times: nothing has completed at or before time 0, or at no time (NaN)
+    const endsArb = fc
+      .array(fc.double({ min: 0, noNaN: true }), { maxLength: 50 })
+      .map((raw) => [...raw].sort((x, y) => x - y));
     fc.assert(
-      fc.property(
-        fc.double({ min: 0, max: 100, noNaN: true }),
-        fc.double({ min: 0, max: 100, noNaN: true }),
-        fc.array(fc.double({ min: 0, max: 100, noNaN: true }), { minLength: 1, maxLength: 50 }),
-        (t1, t2, raw) => {
-          const ends = [...raw].sort((x, y) => x - y);
-          const [lo, hi] = t1 <= t2 ? [t1, t2] : [t2, t1];
-          const a = getCompletedGenerations(lo, ends);
-          const b = getCompletedGenerations(hi, ends);
-          expect(a).toBeLessThanOrEqual(b);
-          expect(b).toBeLessThanOrEqual(ends.length);
-          expect(a).toBe(ends.filter((e) => e <= lo && lo > 0).length);
-        }
-      ),
-      { numRuns: 200 }
+      fc.property(fc.double(), endsArb, (time, ends) => {
+        const expected = Number.isNaN(time) || time <= 0 ? 0 : ends.filter((e) => e <= time).length;
+        expect(getCompletedGenerations(time, ends)).toBe(expected);
+      }),
+      {
+        numRuns: 2000,
+        examples: [
+          // Boundaries and a shared end time
+          ...[0, 0.999, 1, 2.5, 9.99, 10, 250].map((t) => [t, [1, 2.5, 2.5, 7, 10]] as [number, number[]]),
+          [NaN, [1, 2]],
+          [-5, [1, 2]],
+          [5, []],
+          // Production finding: an infinite time counts no generations as complete
+          [Infinity, [0]],
+        ],
+      }
     );
   });
 
-  it('degenerate inputs return 0', () => {
-    expect(getCompletedGenerations(NaN, [1, 2])).toBe(0);
-    expect(getCompletedGenerations(-5, [1, 2])).toBe(0);
-    expect(getCompletedGenerations(5, [])).toBe(0);
+  it('no generations means no end times', () => {
     expect(getGenerationEndTimes([], 0, 10)).toEqual([]);
   });
 });
@@ -2032,36 +2005,29 @@ describe('Constraint: resolved defaults match the documented values', () => {
   it('every option resolves to its documented default', () => {
     const resolved = resolveOptions({ container: document.createElement('div') });
 
-    expect(resolved.duration).toBe(600);
-    expect(resolved.generations).toBe(47);
-    expect(resolved.maxHeight).toBe(0.35);
+    for (const key of NUMERIC_KEYS) expect(resolved[key], key).toBe(DOCUMENTED_DEFAULT[key]);
     expect(resolved.density).toBe('normal');
     expect(resolved.categories).toBeNull();
     expect(resolved.loop).toBe(false);
-    expect(resolved.speed).toBe(1);
     expect(resolved.autoplay).toBe(true);
     expect(resolved.respectReducedMotion).toBe(true);
-    expect(resolved.maxPixelRatio).toBe(2);
-    expect(resolved.targetFPS).toBe(30);
     expect(resolved.timingCurve).toBe('linear');
     expect(resolved.background).toBe('transparent');
-    expect(resolved.zIndex).toBe(-1);
-    expect(resolved.opacity).toBe(1);
-    expect(resolved.fadeHeight).toBe(0);
     expect(resolved.fadeColor).toBe('#ffffff');
     expect(resolved.colors.accent).toBe('#F6821F');
     expect(resolved.colors.palette).toBe('natural');
     expect(resolved.colors.flowerColors).toEqual([]);
     expect(resolved.colors.foliageColors).toEqual([]);
-    expect(resolved.colors.accentWeight).toBe(0.4);
+    expect(resolved.colors.accentWeight).toBe(DOCUMENTED_ACCENT_WEIGHT);
   });
 });
 
-// ==================== BOUNDS EDGES ====================
-// Exhaustive: every clamped numeric option, probed just outside and exactly
-// at both bounds. Kills the bounds-table and clamp-direction mutants.
+// ==================== BOUNDS TABLE ====================
+// The code's bounds table must match the documented ranges. How each option
+// resolves against those ranges (both bounds, just outside, non-finite) is
+// 'Property: resolveOptions follows the documented option contract'.
 
-describe('Exhaustive: numeric options clamp exactly at their bounds', () => {
+describe('Exhaustive: the bounds table matches the documented ranges', () => {
   const cases = [
     ['duration', OPTION_BOUNDS.DURATION],
     ['generations', OPTION_BOUNDS.GENERATIONS],
@@ -2074,47 +2040,24 @@ describe('Exhaustive: numeric options clamp exactly at their bounds', () => {
     ['zIndex', OPTION_BOUNDS.Z_INDEX],
   ] as const;
 
-  // The documented ranges (README option tables), pinned independently of
-  // OPTION_BOUNDS so a wrong bounds table cannot pass by construction
-  const documented: Record<string, [number, number]> = {
-    duration: [1, 86400],
-    generations: [1, 1000],
-    maxHeight: [0.05, 1],
-    speed: [0.01, 100],
-    maxPixelRatio: [0.5, 4],
-    targetFPS: [1, 120],
-    opacity: [0, 1],
-    fadeHeight: [0, 1],
-    zIndex: [-9999, 9999],
-  };
-
   it.each(cases)('%s bounds match the documented range', (key, { min, max }) => {
-    expect([min, max]).toEqual(documented[key]);
+    expect([min, max]).toEqual(DOCUMENTED_RANGE[key]);
   });
 
-  it.each(cases)('%s clamps to [min, max]', (key, { min, max }) => {
-    const container = document.createElement('div');
-    const resolve = (value: number) =>
-      resolveOptions({ container, [key]: value } as never)[key] as number;
-
-    expect(resolve(min - 1000)).toBe(min);
-    expect(resolve(min)).toBe(min);
-    expect(resolve(max)).toBe(max);
-    expect(resolve(max + 1000)).toBe(max);
-  });
-
-  it('seed wraps into [0, max) instead of clamping', () => {
-    const container = document.createElement('div');
-    const { max } = OPTION_BOUNDS.SEED;
-    expect(resolveOptions({ container, seed: max + 5 }).seed).toBe(5);
-    expect(resolveOptions({ container, seed: -1 }).seed).toBe(max - 1);
+  it('the seed range matches the documented one', () => {
+    expect([OPTION_BOUNDS.SEED.min, OPTION_BOUNDS.SEED.max]).toEqual([0, DOCUMENTED_SEED_RANGE]);
   });
 });
 
 // ==================== PLANT COUNTS AND HEIGHTS ====================
 
 describe('Constraint: plants per generation span the density range', () => {
-  it.each(['sparse', 'normal', 'dense', 'lush'] as const)('%s', (density) => {
+  // That every count stays inside the range is a property over all configs
+  // ('Property: generated gardens over the full config domain'). That both
+  // ends are actually reached is an existence claim, which a for-all
+  // property cannot state, so it stays a fixed witness: 200 generations
+  // from five seeds.
+  it.each(DOCUMENTED_DENSITIES)('%s reaches both ends of its range', (density) => {
     const [min, max] = PLANTS_PER_GENERATION[density];
     const counts = new Map<number, number>();
     for (const seed of [1, 2, 3, 4, 5]) {
@@ -2128,27 +2071,6 @@ describe('Constraint: plants per generation span the density range', () => {
     const seen = [...counts.keys()];
     expect(Math.min(...seen)).toBe(min);
     expect(Math.max(...seen)).toBe(max); // the top of the range is reachable
-  });
-});
-
-describe('Constraint: maxHeight caps the drawn plant height', () => {
-  it.each([0.05, 0.2, 0.35, 0.5, 0.8, 1])('maxHeight %s', (maxHeight) => {
-    for (const seed of [1, 2, 3]) {
-      const plants = generatePlants(
-        resolveOptions({
-          container: document.createElement('div'),
-          seed,
-          maxHeight,
-          density: 'lush',
-          generations: 60,
-        })
-      );
-      for (const p of plants) {
-        // Renderers draw maxHeight x the type's heightMultiplier
-        const drawn = p.maxHeight * getPlantVariation(p.type).heightMultiplier;
-        expect(drawn).toBeLessThanOrEqual(maxHeight + 1e-12);
-      }
-    }
   });
 });
 

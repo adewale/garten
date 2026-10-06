@@ -602,7 +602,9 @@ toward `fadeColor` with a `source-atop` gradient: fully `fadeColor` at the
 `maxHeight` line, no effect at the bottom of the zone. `source-atop` tints
 only pixels already drawn, so a transparent canvas stays transparent. A
 fully transparent `fadeColor` (e.g. `'transparent'`) erases toward
-transparent instead. `maxHeight` caps drawn height: the generator clamps
-each plant's height so `height × heightMultiplier` never exceeds it. Resize
+transparent instead. `maxHeight` caps stem height: the generator clamps
+each plant's height so `height × heightMultiplier` never exceeds it. Parts
+drawn above the stem top (flower heads sized in pixels, plumes and spikes
+sized as a fraction of the plant) are not included in the cap. Resize
 wipes a canvas bitmap by spec, so the renderer retains the last
 `(plants, time)` and repaints after every (debounced) resize.

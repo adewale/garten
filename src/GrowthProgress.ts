@@ -79,7 +79,8 @@ export class GrowthProgress {
     config: GrowthConfig = GrowthProgress.defaultConfig
   ) {
     this._config = config;
-    this._progress = Math.max(0, Math.min(1, progress));
+    // NaN progress (0/0 from a zero duration at time === delay) is "not started"
+    this._progress = Number.isNaN(progress) ? 0 : Math.max(0, Math.min(1, progress));
 
     // Calculate growth phases
     this._stem = Math.min(1, this._progress * config.stemRate);
@@ -118,7 +119,7 @@ export class GrowthProgress {
     duration: number,
     config?: Partial<GrowthConfig>
   ): GrowthProgress {
-    const progress = (time - delay) / duration;
+    const progress = rawGrowthProgress(time, delay, duration);
     return new GrowthProgress(progress, GrowthProgress.mergeConfig(config));
   }
 
@@ -374,7 +375,7 @@ export function calculateGrowthPhases(
   delay: number,
   growDuration: number
 ): GrowthPhases | null {
-  const rawProgress = (time - delay) / growDuration;
+  const rawProgress = rawGrowthProgress(time, delay, growDuration);
   if (rawProgress <= 0) return null;
 
   // Clamp like GrowthProgress/MutableGrowthProgress so all three growth
@@ -400,5 +401,15 @@ export function isPlantActive(time: number, delay: number): boolean {
  * Calculate raw progress (0-1) without phase separation
  */
 export function calculateRawProgress(time: number, delay: number, duration: number): number {
-  return Math.max(0, Math.min(1, (time - delay) / duration));
+  return Math.max(0, Math.min(1, rawGrowthProgress(time, delay, duration)));
+}
+
+/**
+ * Unclamped growth progress. From its end time on a plant is exactly fully
+ * grown: (time - delay) / duration can round to just below 1 at
+ * time === delay + duration.
+ */
+export function rawGrowthProgress(time: number, delay: number, duration: number): number {
+  if (time >= delay + duration) return 1;
+  return (time - delay) / duration;
 }

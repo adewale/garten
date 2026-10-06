@@ -40,10 +40,12 @@ export class Color {
    * @param a Alpha component (0-1), defaults to 1
    */
   constructor(r: number, g: number, b: number, a: number = 1) {
-    this._r = Math.round(Math.max(0, Math.min(255, r)));
-    this._g = Math.round(Math.max(0, Math.min(255, g)));
-    this._b = Math.round(Math.max(0, Math.min(255, b)));
-    this._a = Math.max(0, Math.min(1, a));
+    // NaN would pass Math.min/max: a NaN channel is 0, a NaN alpha opaque
+    const channel = (v: number) => (Number.isNaN(v) ? 0 : Math.round(Math.max(0, Math.min(255, v))));
+    this._r = channel(r);
+    this._g = channel(g);
+    this._b = channel(b);
+    this._a = Number.isNaN(a) ? 1 : Math.max(0, Math.min(1, a));
   }
 
   // ==================== GETTERS ====================
@@ -299,11 +301,13 @@ export class Color {
    */
   mix(other: Color, amount: number = 0.5): Color {
     const t = Math.max(0, Math.min(1, amount));
+    // a + (b - a) * t can overshoot b by an ulp at t = 1
+    const mixChannel = (a: number, b: number) => (t === 1 ? b : a + (b - a) * t);
     return new Color(
-      this._r + (other._r - this._r) * t,
-      this._g + (other._g - this._g) * t,
-      this._b + (other._b - this._b) * t,
-      this._a + (other._a - this._a) * t
+      mixChannel(this._r, other._r),
+      mixChannel(this._g, other._g),
+      mixChannel(this._b, other._b),
+      mixChannel(this._a, other._a)
     );
   }
 

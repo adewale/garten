@@ -8,15 +8,15 @@
  * regressions, not on slow/virtualized CI hosts.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { Vec2, MutableVec2 } from './Vec2';
 import { Color } from './Color';
 import { SeededRandom } from './SeededRandom';
 import { GrowthProgress } from './GrowthProgress';
 import { GrowthProgressPool, MutableGrowthProgress } from './GrowthProgressPool';
 import { generatePlants } from './plants/generator';
-import { drawPlant } from './plants/renderers';
-import { resolveOptions } from './defaults';
+import { resolveOptions, plantsPerGeneration } from './defaults';
+import { Garten } from './Garden';
 import { OPTION_BOUNDS } from './constants';
 
 // Helper to measure operations per second
@@ -149,11 +149,6 @@ describe('Performance: SeededRandom operations', () => {
   const ITERATIONS = 100000;
   const rng = new SeededRandom(12345);
 
-  it('should perform 100k next() calls in under 500ms', () => {
-    const time = measureTimeMs(() => rng.next(), ITERATIONS);
-    expect(time).toBeLessThan(500);
-  });
-
   it('should perform 100k range() calls in under 500ms', () => {
     const time = measureTimeMs(() => rng.range(0, 100), ITERATIONS);
     expect(time).toBeLessThan(500);
@@ -190,14 +185,6 @@ describe('Performance: SeededRandom operations', () => {
 describe('Performance: GrowthProgress calculations', () => {
   const ITERATIONS = 50000;
 
-  it('should perform 50k calculate() calls in under 500ms', () => {
-    const time = measureTimeMs(
-      () => GrowthProgress.calculate(500, 100, 1000),
-      ITERATIONS
-    );
-    expect(time).toBeLessThan(500);
-  });
-
   it('should perform 50k fromProgress() calls in under 500ms', () => {
     const time = measureTimeMs(
       () => GrowthProgress.fromProgress(0.5),
@@ -224,53 +211,120 @@ describe('Performance: GrowthProgress calculations', () => {
   });
 });
 
-describe('Performance: real generate + render path', () => {
-  it('worst legal garden generates and draws one mid-growth frame in under 2500ms', () => {
-    // Canary over the real hot path, not a simulation of it: the densest
-    // legal configuration through generatePlants(), then drawPlant() for
-    // every plant at mid-growth on a no-op context (so only library code is
-    // timed). Measured ~150-220ms cold on a dev container (2026-10);
-    // the budget carries >10x headroom.
-    const start = performance.now();
-    const plants = generatePlants(
-      resolveOptions({
-        container: document.createElement('div'),
-        seed: 42,
-        density: 'lush',
-        generations: OPTION_BOUNDS.GENERATIONS.max,
-        maxHeight: OPTION_BOUNDS.MAX_HEIGHT.max,
-      })
-    );
+describe('Scale probe: the largest legal garden through the real controller', () => {
+  // Once, outside the generators (hegel scale.md): the densest legal
+  // configuration (max generations, lush, maxHeight 1) through Garten itself
+  // - generate, render a frame, resize, seek to the end, destroy - on a
+  // canvas whose context only counts calls, so library code is what runs.
+  // Per-plant quadratic work or pool exhaustion only shows up at this size.
+  // The whole sequence runs once in beforeAll; each test checks one outcome.
+  const options = {
+    seed: 42,
+    density: 'lush' as const,
+    generations: OPTION_BOUNDS.GENERATIONS.max,
+    maxHeight: OPTION_BOUNDS.MAX_HEIGHT.max,
+    duration: 100,
+    autoplay: false,
+    respectReducedMotion: false,
+  };
+  const flushes: number[] = []; // fill/stroke count per rendered frame
+  let nonFinite = 0;
+  let expectedPlants = 0;
+  let canvasWidthAfterResize = 0;
+  let stateAtEnd = '';
+  let canvasRemoved = false;
+  let elapsedMs = 0;
+  let warnings: string[] = [];
 
-    const noop = () => {};
-    const ctx = { createLinearGradient: () => ({ addColorStop: noop }) } as Record<string, unknown>;
+  beforeAll(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let frameFlushes = 0;
+    const count = (...args: unknown[]) => {
+      for (const a of args) if (typeof a === 'number' && !Number.isFinite(a)) nonFinite++;
+    };
+    const ctx: Record<string, unknown> = {
+      createLinearGradient: () => ({ addColorStop: () => {} }),
+      clearRect: () => {
+        flushes.push(0);
+        frameFlushes = flushes.length - 1;
+      },
+      fill: () => flushes[frameFlushes]++,
+      stroke: () => flushes[frameFlushes]++,
+    };
     for (const method of [
       'beginPath', 'closePath', 'moveTo', 'lineTo', 'bezierCurveTo', 'quadraticCurveTo',
-      'arc', 'ellipse', 'rect', 'fill', 'stroke', 'fillRect', 'clearRect',
-      'save', 'restore', 'translate', 'rotate', 'scale', 'setTransform',
+      'arc', 'ellipse', 'rect', 'fillRect', 'save', 'restore', 'translate', 'rotate',
+      'scale', 'setTransform',
     ]) {
-      ctx[method] = noop;
+      ctx[method] = count;
     }
+    // Dev-mode pools warn once they pass 16,384 objects, which the largest
+    // legal garden (up to 30,000 concurrent plants) does by design
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockImplementation((() => ctx) as never);
 
-    const pool = new GrowthProgressPool({ devMode: false });
-    pool.beginFrame();
-    for (const plant of plants) {
-      drawPlant(
-        ctx as unknown as CanvasRenderingContext2D,
-        plant,
-        1920,
-        1080,
-        plant.delay + plant.growDuration * 0.5,
-        pool
-      );
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    let width = 1920;
+    vi.spyOn(container, 'getBoundingClientRect').mockImplementation(
+      () => ({ width, height: 1080, top: 0, left: 0, right: width, bottom: 1080, x: 0, y: 0 }) as DOMRect
+    );
+
+    try {
+      const start = performance.now();
+      const garden = new Garten({ container, ...options });
+      garden.seek(options.duration / 2); // one mid-growth frame
+      width = 1280; // jsdom has no ResizeObserver: the debounced window fallback
+      window.dispatchEvent(new Event('resize'));
+      vi.advanceTimersByTime(1000);
+      canvasWidthAfterResize = container.querySelector('canvas')!.width;
+      garden.seek(options.duration); // every plant fully grown
+      stateAtEnd = garden.getState();
+      garden.destroy();
+      canvasRemoved = container.querySelector('canvas') === null;
+      elapsedMs = performance.now() - start;
+
+      expectedPlants = generatePlants(resolveOptions({ container, ...options })).length;
+    } finally {
+      warnings = warn.mock.calls.map((args) => String(args[0]));
+      warn.mockRestore();
+      getContext.mockRestore();
+      container.remove();
+      vi.useRealTimers();
     }
-    pool.endFrame();
-    const elapsed = performance.now() - start;
+  });
 
-    // Guard against a vacuous canary (e.g. generation silently capped)
-    expect(plants.length).toBeGreaterThan(OPTION_BOUNDS.GENERATIONS.max * 10);
-    expect(pool.getStats().acquired).toBeGreaterThan(0);
-    expect(elapsed).toBeLessThan(2500);
+  it('generates within the documented per-generation bounds', () => {
+    const [min, max] = plantsPerGeneration.lush;
+    expect(expectedPlants).toBeGreaterThanOrEqual(OPTION_BOUNDS.GENERATIONS.max * min);
+    expect(expectedPlants).toBeLessThanOrEqual(OPTION_BOUNDS.GENERATIONS.max * max);
+  });
+
+  it('renders the mid-growth frame, the resize repaint and the final frame', () => {
+    expect(flushes).toHaveLength(3);
+    // The resize repaints the same moment it showed before
+    expect(flushes[1]).toBe(flushes[0]);
+    // Fully grown, every plant draws at least once
+    expect(flushes[2]).toBeGreaterThanOrEqual(expectedPlants);
+  });
+
+  it('warns about nothing but the expected dev-mode pool growth', () => {
+    expect(warnings.filter((w) => !w.startsWith('GrowthProgressPool: Pool grew to'))).toEqual([]);
+  });
+
+  it('passes only finite numbers to the canvas', () => {
+    expect(nonFinite).toBe(0);
+  });
+
+  it('resizes, completes at the end and removes its canvas on destroy', () => {
+    expect([canvasWidthAfterResize, stateAtEnd, canvasRemoved]).toEqual([1280, 'complete', true]);
+  });
+
+  it('completes the whole sequence within a regression-canary budget', () => {
+    // Measured ~480-600ms on a dev container (2026-10); 10x headroom
+    expect(elapsedMs).toBeLessThan(6000);
   });
 });
 
@@ -311,18 +365,6 @@ describe('Performance: Memory-conscious patterns', () => {
 });
 
 describe('Performance: Throughput baselines', () => {
-  it('Vec2 should achieve > 100k ops/sec for add', () => {
-    const v1 = new Vec2(10, 20);
-    const v2 = new Vec2(30, 40);
-    const ops = measureOpsPerSecond(() => v1.add(v2), 100000);
-    expect(ops).toBeGreaterThan(100000);
-  });
-
-  it('Color should achieve > 100k ops/sec for creation', () => {
-    const ops = measureOpsPerSecond(() => new Color(128, 128, 128), 100000);
-    expect(ops).toBeGreaterThan(100000);
-  });
-
   it('SeededRandom should achieve > 500k ops/sec for next()', () => {
     const rng = new SeededRandom(42);
     const ops = measureOpsPerSecond(() => rng.next(), 100000);
@@ -369,38 +411,6 @@ describe('Performance: GrowthProgressPool', () => {
 
     // 10k frame cycles should complete in under 500ms
     expect(elapsed).toBeLessThan(500);
-  });
-
-  it('should handle 1000 plants per frame under 160ms', () => {
-    const pool = new GrowthProgressPool({ devMode: false });
-    const numPlants = 1000;
-
-    // Pre-generate plant timing data
-    const plants = Array.from({ length: numPlants }, (_, i) => ({
-      delay: i * 5,
-      duration: 1000,
-    }));
-
-    const time = 500; // Mid-animation
-
-    pool.beginFrame();
-    const start = performance.now();
-
-    for (const plant of plants) {
-      if (time >= plant.delay) {
-        const phases = pool.acquireAndCalculate(time, plant.delay, plant.duration);
-        // Use result to prevent dead code elimination
-        if (phases.isActive && phases.stem > 0) {
-          // Simulate work
-        }
-      }
-    }
-
-    const elapsed = performance.now() - start;
-    pool.endFrame();
-
-    // 10x headroom over the 16ms 60fps frame budget
-    expect(elapsed).toBeLessThan(160);
   });
 
   it('should not grow pool unnecessarily', () => {

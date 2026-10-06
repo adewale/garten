@@ -73,25 +73,44 @@ describe('Doc sync: README option defaults match the code', () => {
   const asCell = (value: string | number | boolean): string =>
     typeof value === 'string' ? `\`'${value}'\`` : `\`${String(value)}\``;
 
-  const isScalar = (value: unknown): value is string | number | boolean =>
-    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
-  const scalarDefaults: Array<[string, string | number | boolean]> = [
-    ...Object.entries(defaultOptions).filter(([, value]) => isScalar(value)),
-    ...Object.entries(defaultColorOptions)
-      .filter(([, value]) => isScalar(value))
-      .map(([key, value]) => [`colors.${key}`, value] as [string, unknown]),
-  ] as Array<[string, string | number | boolean]>;
+  // Every option with a default: the resolved options (events excepted: a
+  // callbacks object documented in its own README section), each colors.*
+  // sub-option, and seed (absent from defaultOptions: random per instance)
+  const optionDefaults: Array<[string, unknown]> = [
+    ...Object.entries(defaultOptions).filter(([key]) => key !== 'events'),
+    ...Object.entries(defaultColorOptions).map(
+      ([key, value]) => [`colors.${key}`, value] as [string, unknown]
+    ),
+    ['seed', undefined],
+  ];
+  // How the README writes each kind of default
+  const expectedCell = (option: string, value: unknown): string => {
+    if (option === 'seed') return 'random';
+    if (value === null) return 'all'; // a null filter applies no filter
+    if (Array.isArray(value)) return `\`${JSON.stringify(value)}\``;
+    if (typeof value === 'object') return '—'; // grouped sub-options, listed below it
+    return asCell(value as string | number | boolean);
+  };
 
-  it('finds scalar defaults to check', () => {
-    expect(scalarDefaults.length).toBeGreaterThan(10);
+  it('seed really has no fixed default', () => {
+    expect('seed' in defaultOptions).toBe(false);
   });
 
-  it.each(scalarDefaults)('README default for `%s` is %s', (option, value) => {
+  it.each(optionDefaults)('README default for `%s` matches the code', (option, value) => {
     const cells = defaultCells(option);
     expect(cells.length, `no README table row for "${option}"`).toBeGreaterThan(0);
     for (const cell of cells) {
-      expect(cell, `README default for "${option}"`).toBe(asCell(value));
+      expect(cell, `README default for "${option}"`).toBe(expectedCell(option, value));
     }
+  });
+
+  it('every README option row names a real option', () => {
+    const known = new Set(optionDefaults.map(([option]) => option));
+    const documented = tableRows
+      .filter((cells) => cells.length === 4 && /^`[\w.]+`$/.test(cells[0]))
+      .map((cells) => cells[0].slice(1, -1));
+    expect(documented.length).toBeGreaterThan(10);
+    expect(documented.filter((option) => !known.has(option))).toEqual([]);
   });
 
   it('README states the setSpeed/speed bounds from OPTION_BOUNDS', () => {
@@ -108,14 +127,27 @@ describe('Doc sync: numeric claims match the code', () => {
   const categoryCount = PLANT_CATEGORIES.length;
   const architecture = read('docs/architecture.md');
 
-  it.each(['README.md', 'CLAUDE.md', 'docs/architecture.md'] as const)(
-    '%s plant type and category counts are accurate',
+  const files = { 'README.md': readme, 'CLAUDE.md': claudeMd, 'docs/architecture.md': architecture };
+  const claims = (content: string, noun: string): number[] =>
+    // \b on both sides: "147 plant types" cannot satisfy a count of 47,
+    // nor "19 categoriesX" a claim about categories
+    [...content.matchAll(new RegExp(`\\b(\\d+) ${noun}\\b`, 'g'))].map((m) => Number(m[1]));
+
+  it.each(Object.keys(files) as Array<keyof typeof files>)(
+    '%s states the plant type count, and only the right one',
     (file) => {
-      const content =
-        file === 'README.md' ? readme : file === 'CLAUDE.md' ? claudeMd : architecture;
-      // \b so "147 plant types" cannot satisfy a count of 47
-      expect(content).toMatch(new RegExp(`\\b${typeCount} plant type`));
-      expect(content).toMatch(new RegExp(`\\b${categoryCount} categories`));
+      const found = claims(files[file], 'plant types?');
+      expect(found.length).toBeGreaterThan(0);
+      expect(found.filter((n) => n !== typeCount)).toEqual([]);
+    }
+  );
+
+  it.each(Object.keys(files) as Array<keyof typeof files>)(
+    '%s states the category count, and only the right one',
+    (file) => {
+      const found = claims(files[file], 'categories');
+      expect(found.length).toBeGreaterThan(0);
+      expect(found.filter((n) => n !== categoryCount)).toEqual([]);
     }
   );
 });
@@ -129,9 +161,15 @@ describe('Doc sync: architecture internals match the implementation', () => {
   // architecture.md writes numeric literals the way the source does (100_000)
   const asLiteral = (n: number): string => String(n).replace(/\B(?=(\d{3})+$)/g, '_');
 
-  it('documents the current seed strides', () => {
-    expect(architecture).toContain(`GEN_SEED_STRIDE = ${asLiteral(GEN_SEED_STRIDE)}`);
-    expect(architecture).toContain(`PLANT_SEED_STRIDE = ${asLiteral(PLANT_SEED_STRIDE)}`);
+  // Bounded on both sides: "PLANT_SEED_STRIDE = 1370" must not satisfy 137
+  const states = (name: string, value: number) =>
+    new RegExp(`\\b${name} = ${asLiteral(value)}(?![\\d_])`);
+
+  it.each([
+    ['GEN_SEED_STRIDE', GEN_SEED_STRIDE],
+    ['PLANT_SEED_STRIDE', PLANT_SEED_STRIDE],
+  ] as const)('documents the current %s', (name, value) => {
+    expect(architecture).toMatch(states(name, value));
   });
 
   it('documents the tallest-first painter ordering', () => {
@@ -153,12 +191,16 @@ describe('Doc sync: browser support claims match the build targets', () => {
 
   it.each(['README.md', 'FAQ.md'] as const)('%s claims exactly the built targets', (file) => {
     const content = file === 'README.md' ? readme : faq;
-    for (const { browser, version } of targets) {
-      const label = browser[0].toUpperCase() + browser.slice(1);
-      expect(content, `${file} must claim ${label} ${version}+`).toContain(
-        `${label} ${version}+`
-      );
-    }
+    const built = targets
+      .map(({ browser, version }) => `${browser[0].toUpperCase()}${browser.slice(1)} ${version}+`)
+      .sort();
+    // Every "<Browser> <n>+" claim in the file, so a stale extra claim fails too
+    const claimed = [
+      ...new Set(
+        [...content.matchAll(/\b(Chrome|Firefox|Safari|Edge) (\d+)\+/g)].map(([claim]) => claim)
+      ),
+    ].sort();
+    expect(claimed).toEqual(built);
   });
 });
 

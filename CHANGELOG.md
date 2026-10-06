@@ -34,9 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overshot it), `fadeColor` was ignored (the fade erased to transparent),
   non-hex colors disabled it, and with an opaque `background` it cut a
   transparent band through the background.
-- **`maxHeight` is now a hard cap on drawn height.** Each plant's height is
+- **`maxHeight` now caps every plant's stem height.** Each plant's height is
   clamped so that height × its variation's `heightMultiplier` never exceeds
-  `maxHeight`. Before, about 3-4% of a default garden's plants were drawn
+  `maxHeight` (flower heads, spikes and plumes can still rise above it). Before, about 3-4% of a default garden's plants were drawn
   above it (19 of 527 with seed 12345), reaching 0.49 of the container at
   the default 0.35.
 

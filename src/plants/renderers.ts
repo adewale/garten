@@ -6,6 +6,7 @@ import { COLORS } from '../constants';
 import { drawStem, drawLeaf } from '../CanvasHelper';
 import { getPlantCategory } from './generator';
 import { getPlantVariation } from './variations';
+import { rawGrowthProgress } from '../GrowthProgress';
 import { GrowthProgressPool, MutableGrowthProgress, getDefaultPool } from '../GrowthProgressPool';
 
 // Single shared stem/leaf implementations live in CanvasHelper.
@@ -34,7 +35,7 @@ function calculateGrowthPhases(
   growDuration: number,
   pool?: GrowthProgressPool
 ): MutableGrowthProgress | null {
-  const progress = (time - delay) / growDuration;
+  const progress = rawGrowthProgress(time, delay, growDuration);
   if (progress <= 0) return null;
 
   const activePool = pool ?? getDefaultPool();

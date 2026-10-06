@@ -184,7 +184,8 @@ export class Vec2 implements Point {
    * Get the length (magnitude) of the vector
    */
   length(): number {
-    return Math.sqrt(this.x * this.x + this.y * this.y);
+    // hypot avoids the overflow/underflow of sqrt(x² + y²) at extreme scales
+    return Math.hypot(this.x, this.y);
   }
 
   /**
@@ -198,11 +199,16 @@ export class Vec2 implements Point {
    * Normalize the vector (make it unit length)
    */
   normalize(): Vec2 {
-    const len = this.length();
-    if (len === 0) {
+    // Scale by the larger component first so the length neither overflows
+    // (near Number.MAX_VALUE) nor underflows (subnormals)
+    const scale = Math.max(Math.abs(this.x), Math.abs(this.y));
+    if (scale === 0) {
       return new Vec2(0, 0);
     }
-    return new Vec2(this.x / len, this.y / len);
+    const x = this.x / scale;
+    const y = this.y / scale;
+    const len = Math.hypot(x, y);
+    return new Vec2(x / len, y / len);
   }
 
   /**
@@ -295,6 +301,9 @@ export class Vec2 implements Point {
    * @param t Interpolation factor (0-1)
    */
   lerp(target: Point, t: number): Vec2 {
+    // Exact endpoints (see lerp in utils.ts)
+    if (t === 0) return new Vec2(this.x, this.y);
+    if (t === 1) return new Vec2(target.x, target.y);
     return new Vec2(
       this.x + (target.x - this.x) * t,
       this.y + (target.y - this.y) * t

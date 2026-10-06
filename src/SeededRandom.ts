@@ -136,7 +136,9 @@ export class SeededRandom {
    * Random float in range [min, max)
    */
   range(min: number, max: number): number {
-    return min + this.next() * (max - min);
+    const value = min + this.next() * (max - min);
+    // Rounding can land exactly on max when the span is tiny next to max
+    return value < max ? value : min;
   }
 
   /**

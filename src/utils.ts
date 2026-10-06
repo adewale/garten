@@ -7,6 +7,10 @@ export { seededRandom, createRandom, pickRandom, randomRange } from './SeededRan
  * Linear interpolation
  */
 export function lerp(a: number, b: number, t: number): number {
+  // Return the endpoints exactly: a + (b - a) * t can miss b by an ulp at
+  // t = 1, and (b - a) can overflow to Infinity (Infinity * 0 is NaN at t = 0)
+  if (t === 0) return a;
+  if (t === 1) return b;
   return a + (b - a) * t;
 }
 
@@ -111,8 +115,15 @@ export function applyTimingCurve(
   }
 
   if (curve === 'ease-in-out') {
-    // Inverse of smoothstep (3t² - 2t³): slow start and end, fast middle
-    return 0.5 - Math.sin(Math.asin(1 - 2 * normalizedGen) / 3);
+    // Inverse of eased('ease-in-out') (2t² below the midpoint, mirrored above):
+    // slow start and end, fast middle. The second half is computed as the
+    // mirror of the first from (total - g) / total, so the curve is exactly
+    // symmetric and hits 0 and 1 exactly.
+    const g = Math.min(totalGenerations, Math.max(0, generation));
+    const firstHalf = (x: number) => Math.sqrt(x / 2);
+    return 2 * g <= totalGenerations
+      ? firstHalf(g / totalGenerations)
+      : 1 - firstHalf((totalGenerations - g) / totalGenerations);
   }
 
   const exponent = getTimingExponent(curve);

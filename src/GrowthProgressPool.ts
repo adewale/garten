@@ -22,7 +22,7 @@
  */
 
 import { GROWTH_PHASES } from './constants';
-import { GrowthConfig, GrowthProgress } from './GrowthProgress';
+import { GrowthConfig, GrowthProgress, rawGrowthProgress } from './GrowthProgress';
 
 // ==================== DEFAULT CONSTANTS ====================
 
@@ -162,8 +162,9 @@ export class MutableGrowthProgress {
     duration: number,
     config: GrowthConfig = GrowthProgress.defaultConfig
   ): this {
-    const rawProgress = (time - delay) / duration;
-    this.progress = Math.max(0, Math.min(1, rawProgress));
+    const rawProgress = rawGrowthProgress(time, delay, duration);
+    // Same NaN rule as GrowthProgress: NaN progress is "not started"
+    this.progress = Number.isNaN(rawProgress) ? 0 : Math.max(0, Math.min(1, rawProgress));
 
     // Calculate growth phases using config
     this.stem = Math.min(1, this.progress * config.stemRate);

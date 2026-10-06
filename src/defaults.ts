@@ -87,7 +87,12 @@ function resolveNumber(value: number | undefined, defaultValue: number, key: str
  */
 function normalizeSeed(seed: number): number {
   const { max } = OPTION_BOUNDS.SEED;
-  return ((seed % max) + max) % max;
+  // % is exact on doubles, so in-range seeds (fractional ones included) are
+  // returned unchanged; only the negative branch rounds, and a value that
+  // rounds up to max wraps to 0. The final + 0 turns -0 into 0.
+  let wrapped = seed % max;
+  if (wrapped < 0) wrapped += max;
+  return wrapped >= max ? 0 : wrapped + 0;
 }
 
 /**
@@ -136,15 +141,32 @@ function resolvePalette(
 /** Resolve categories: must be an array of strings (or absent) */
 function resolveCategories(value: string[] | null | undefined): string[] | null {
   if (value === undefined || value === null) return defaultOptions.categories;
-  if (Array.isArray(value)) return value;
-  warnInvalid('categories', value, null);
-  return null;
+  if (!Array.isArray(value)) {
+    warnInvalid('categories', value, null);
+    return null;
+  }
+  // Category names are strings; drop anything else rather than crash later
+  const names = value.filter((name): name is string => typeof name === 'string');
+  if (names.length !== value.length) warnInvalid('categories', value, names);
+  return names;
 }
 
-/** Resolve timing curve: numeric curves must be finite */
+/** Resolve a custom color list: an array of color strings (others dropped) */
+function resolveColorList(option: string, value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const colors = value.filter((color): color is string => typeof color === 'string');
+  if (colors.length !== value.length) warnInvalid(option, value, colors);
+  return colors;
+}
+
+const TIMING_CURVE_NAMES: readonly string[] = ['linear', 'ease-out', 'ease-in', 'ease-in-out'];
+
+/** Resolve timing curve: a documented name or a finite number */
 function resolveTimingCurve(value: ResolvedOptions['timingCurve'] | undefined): ResolvedOptions['timingCurve'] {
   if (value === undefined) return defaultOptions.timingCurve;
-  if (typeof value === 'number' && !Number.isFinite(value)) {
+  const valid =
+    typeof value === 'number' ? Number.isFinite(value) : TIMING_CURVE_NAMES.includes(value as string);
+  if (!valid) {
     warnInvalid('timingCurve', value, defaultOptions.timingCurve);
     return defaultOptions.timingCurve;
   }
@@ -205,8 +227,8 @@ export function resolveOptions(options: GardenOptions): ResolvedOptions {
   const colors: Required<ColorOptions> = {
     ...mergedColors,
     palette: resolvePalette(mergedColors.palette),
-    flowerColors: Array.isArray(mergedColors.flowerColors) ? mergedColors.flowerColors : [],
-    foliageColors: Array.isArray(mergedColors.foliageColors) ? mergedColors.foliageColors : [],
+    flowerColors: resolveColorList('flowerColors', mergedColors.flowerColors),
+    foliageColors: resolveColorList('foliageColors', mergedColors.foliageColors),
     accentWeight: clampFraction(mergedColors.accentWeight, defaultColorOptions.accentWeight),
   };
 

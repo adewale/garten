@@ -448,6 +448,27 @@ function getHeightRange(type: PlantType, maxHeight: number): [number, number] {
 }
 
 /**
+ * Largest height <= height whose drawn size (height x multiplier) stays
+ * within maxHeight. maxHeight / multiplier alone can round up by an ulp.
+ */
+function capDrawnHeight(height: number, multiplier: number, maxHeight: number): number {
+  if (!(multiplier > 0)) return Math.min(height, maxHeight);
+  let capped = Math.min(height, maxHeight / multiplier);
+  while (capped * multiplier > maxHeight) capped -= Number.EPSILON * capped;
+  return capped;
+}
+
+/**
+ * Largest duration <= length such that start + duration <= end
+ * (end - start can round so that start + (end - start) > end)
+ */
+function fitWithin(start: number, length: number, end: number): number {
+  let fitted = length;
+  while (start + fitted > end) fitted -= Number.EPSILON * Math.max(fitted, end);
+  return fitted;
+}
+
+/**
  * Generate a random height within range, biased toward max when maxHeight is high
  * This ensures tall gardens actually have plants reaching the top
  */
@@ -542,9 +563,10 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
       // cap the stored height so the drawn plant stays within maxHeight
       const variation = getPlantVariation(type);
       const { heightMultiplier } = variation;
-      const plantHeight = Math.min(
+      const plantHeight = capDrawnHeight(
         generatePlantHeight(minH, maxH, maxHeight, plantRand),
-        heightMultiplier > 0 ? maxHeight / heightMultiplier : maxHeight
+        heightMultiplier,
+        maxHeight
       );
 
       // Colors - use direct array indexing for speed
@@ -559,7 +581,11 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
       const delay = Math.min(rawDelay, duration - minGrowDuration);
       const rawGrowDuration = genDuration * randomRange(0.6, 1.0, plantRand);
       // Ensure plant finishes within animation duration, with minimum to prevent visual artifacts
-      const growDuration = Math.max(minGrowDuration, Math.min(rawGrowDuration, duration - delay));
+      const growDuration = fitWithin(
+        delay,
+        Math.max(minGrowDuration, Math.min(rawGrowDuration, duration - delay)),
+        duration
+      );
 
       // Visual properties
       const petals = 5 + Math.floor(plantRand() * 4);
@@ -635,7 +661,7 @@ export function getCompletedGenerations(
   time: number,
   generationEnds: readonly number[]
 ): number {
-  if (!Number.isFinite(time) || time <= 0) return 0;
+  if (Number.isNaN(time) || time <= 0) return 0;
   // Binary search for the first generation still growing at `time`
   let lo = 0;
   let hi = generationEnds.length;

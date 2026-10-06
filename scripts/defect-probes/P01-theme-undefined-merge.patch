@@ -1,8 +1,8 @@
 diff --git a/src/defaults.ts b/src/defaults.ts
-index e718807..8dc0522 100644
+index d000927..b3a88a0 100644
 --- a/src/defaults.ts
 +++ b/src/defaults.ts
-@@ -198,13 +198,13 @@ export function resolveOptions(options: GardenOptions): ResolvedOptions {
+@@ -222,13 +222,13 @@ export function resolveOptions(options: GardenOptions): ResolvedOptions {
    // (e.g. from theme helpers) from clobbering the defaults.
    const mergedColors: Required<ColorOptions> = {
      ...defaultColorOptions,
@@ -12,15 +12,15 @@ index e718807..8dc0522 100644
    const colors: Required<ColorOptions> = {
      ...mergedColors,
      palette: resolvePalette(mergedColors.palette),
--    flowerColors: Array.isArray(mergedColors.flowerColors) ? mergedColors.flowerColors : [],
--    foliageColors: Array.isArray(mergedColors.foliageColors) ? mergedColors.foliageColors : [],
+-    flowerColors: resolveColorList('flowerColors', mergedColors.flowerColors),
+-    foliageColors: resolveColorList('foliageColors', mergedColors.foliageColors),
 +    flowerColors: mergedColors.flowerColors,
 +    foliageColors: mergedColors.foliageColors,
      accentWeight: clampFraction(mergedColors.accentWeight, defaultColorOptions.accentWeight),
    };
  
 diff --git a/src/palettes.ts b/src/palettes.ts
-index e9419fa..b504393 100644
+index 4e699ed..c3e6342 100644
 --- a/src/palettes.ts
 +++ b/src/palettes.ts
 @@ -146,7 +146,7 @@ const MAX_ACCENT_RATIO = 9;
@@ -42,7 +42,7 @@ index e9419fa..b504393 100644
      // Use custom colors for both
      return {
 diff --git a/src/presets.ts b/src/presets.ts
-index 4dadc17..5c84b1c 100644
+index e38bae3..8376391 100644
 --- a/src/presets.ts
 +++ b/src/presets.ts
 @@ -343,13 +343,11 @@ export function applyTheme(

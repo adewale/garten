@@ -108,7 +108,8 @@ Each plant category has natural height ranges to create realistic proportions:
 
 A category is available only when `maxHeight` is at least the bottom of its
 range. Heights are drawn from the category range capped at `maxHeight`, and
-`maxHeight` is a hard cap on drawn height: no plant is drawn taller than it.
+no plant's stem is drawn taller than it; flower heads, lavender spikes and
+pampas plumes can rise somewhat above the line.
 
 The `maxHeight` option controls both which plant categories appear and their
 distribution. The percentages below are the expected share of tall-category
