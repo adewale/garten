@@ -80,8 +80,10 @@ function resolveNumber(value: number | undefined, defaultValue: number, key: str
 }
 
 /**
- * Normalize a seed into [0, SEED.max). Unlike plain clamping this keeps
- * negative and out-of-range seeds distinct from each other.
+ * Normalize a seed into [0, SEED.max) by wrapping (modulo SEED.max).
+ * Unlike clamping, out-of-range seeds still map to different gardens from
+ * each other, but seeds that differ by a multiple of SEED.max coincide:
+ * -1 and SEED.max - 1 give the same garden.
  */
 function normalizeSeed(seed: number): number {
   const { max } = OPTION_BOUNDS.SEED;

@@ -88,8 +88,13 @@ export function getTimingExponent(curve: TimingCurve): number {
 }
 
 /**
- * Apply timing curve to normalize a generation's position in time
- * Returns the warped time position (0-1) for a given generation
+ * Start time (0-1) of a generation under a timing curve.
+ *
+ * The curve names describe how generations arrive over time, with the same
+ * meaning as GrowthProgress.eased(): the fraction of generations that have
+ * started by time t follows the easing curve. A generation's start time is
+ * therefore the curve's *inverse* applied to its index. 'ease-out' (fast
+ * start) packs early generations close together and spreads late ones out.
  */
 export function applyTimingCurve(
   generation: number,
@@ -99,25 +104,24 @@ export function applyTimingCurve(
   // Guard against division by zero
   if (totalGenerations <= 0) return 0;
 
-  const normalizedGen = generation / totalGenerations;
+  const normalizedGen = Math.min(1, Math.max(0, generation / totalGenerations));
 
   if (curve === 'linear' || curve === 1) {
     return normalizedGen;
   }
 
   if (curve === 'ease-in-out') {
-    // Smooth S-curve using smoothstep formula
-    const t = normalizedGen;
-    return t * t * (3 - 2 * t);
+    // Inverse of smoothstep (3t² - 2t³): slow start and end, fast middle
+    return 0.5 - Math.sin(Math.asin(1 - 2 * normalizedGen) / 3);
   }
 
   const exponent = getTimingExponent(curve);
 
   if (exponent > 1) {
-    // Ease-out: fast start, slow end
-    return 1 - Math.pow(1 - normalizedGen, exponent);
+    // Ease-out 1 - (1 - t)^e, inverted: fast start, slow end
+    return 1 - Math.pow(1 - normalizedGen, 1 / exponent);
   } else {
-    // Ease-in: slow start, fast end
-    return Math.pow(normalizedGen, 1 / exponent);
+    // Ease-in t^(1/e), inverted: slow start, fast end
+    return Math.pow(normalizedGen, exponent);
   }
 }

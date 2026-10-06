@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   themes,
   presets,
@@ -9,8 +9,6 @@ import {
   getPresetNames,
   createTheme,
   createPreset,
-  densityPreset,
-  speedPreset,
 } from './presets';
 
 describe('themes', () => {
@@ -23,10 +21,11 @@ describe('themes', () => {
     expect(Object.keys(themes).length).toBeGreaterThan(5);
   });
 
-  it('should have required properties on all themes', () => {
-    for (const [_name, theme] of Object.entries(themes)) {
-      expect(theme.name).toBeDefined();
-      expect(theme.palette).toBeDefined();
+  it('should have a name and a known palette on all themes', () => {
+    const palettes = ['natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone'];
+    for (const theme of Object.values(themes)) {
+      expect(theme.name).toMatch(/\S/);
+      expect(palettes).toContain(theme.palette);
     }
   });
 });
@@ -46,10 +45,10 @@ describe('presets', () => {
     expect(Object.keys(presets).length).toBeGreaterThan(5);
   });
 
-  it('should have required properties on all presets', () => {
-    for (const [_name, preset] of Object.entries(presets)) {
-      expect(preset.name).toBeDefined();
-      expect(preset.options).toBeDefined();
+  it('should have a name and at least one option on all presets', () => {
+    for (const preset of Object.values(presets)) {
+      expect(preset.name).toMatch(/\S/);
+      expect(Object.keys(preset.options).length).toBeGreaterThan(0);
     }
   });
 });
@@ -64,7 +63,28 @@ describe('applyTheme', () => {
   it('should merge with existing options', () => {
     const options = applyTheme('natural', { duration: 300 });
     expect(options.duration).toBe(300);
-    expect(options.colors).toBeDefined();
+    expect(options.colors!.palette).toBe(themes.natural.palette);
+  });
+
+  it('carries every color field the theme defines', () => {
+    for (const theme of Object.values(themes)) {
+      const options = applyTheme(theme);
+      expect(options.colors!.palette).toBe(theme.palette);
+      expect(options.colors!.accent).toBe(theme.accent);
+      expect(options.colors!.flowerColors).toBe(theme.flowerColors);
+      expect(options.colors!.foliageColors).toBe(theme.foliageColors);
+      expect(options.fadeColor).toBe(theme.fadeColor);
+    }
+  });
+
+  it('lets explicit options win over the theme, fadeColor included', () => {
+    const options = applyTheme('midnight', {
+      fadeColor: '#123456',
+      colors: { accent: '#00FF00' },
+    });
+    expect(themes.midnight.fadeColor).toBeDefined();
+    expect(options.fadeColor).toBe('#123456');
+    expect(options.colors!.accent).toBe('#00FF00');
   });
 
   it('should accept theme object', () => {
@@ -160,36 +180,3 @@ describe('createPreset', () => {
     expect(preset.description).toBe('A fast preset');
   });
 });
-
-describe('densityPreset', () => {
-  it('should return options for each density level', () => {
-    expect(densityPreset('sparse').density).toBe('sparse');
-    expect(densityPreset('normal').density).toBe('normal');
-    expect(densityPreset('dense').density).toBe('dense');
-    expect(densityPreset('lush').density).toBe('lush');
-  });
-
-  it('should adjust generations with density', () => {
-    const sparse = densityPreset('sparse');
-    const lush = densityPreset('lush');
-    expect(sparse.generations!).toBeLessThan(lush.generations!);
-  });
-});
-
-describe('speedPreset', () => {
-  it('should return options for each speed level', () => {
-    const slow = speedPreset('slow');
-    const fast = speedPreset('fast');
-
-    expect(slow.speed).toBeLessThan(fast.speed!);
-    expect(slow.duration).toBeGreaterThan(fast.duration!);
-  });
-
-  it('should have instant option', () => {
-    const instant = speedPreset('instant');
-    expect(instant.speed).toBeGreaterThan(5);
-  });
-});
-
-// Need to import vi for vitest
-import { vi } from 'vitest';

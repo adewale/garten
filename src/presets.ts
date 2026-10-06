@@ -3,7 +3,7 @@
  * Provides ready-to-use configurations for common use cases
  */
 
-import type { GardenOptions, GardenPreset, GardenTheme, ColorOptions, Density } from './types';
+import type { GardenOptions, GardenPreset, GardenTheme, ColorOptions } from './types';
 import { COLORS } from './constants';
 import { omitUndefined } from './utils';
 
@@ -355,7 +355,8 @@ export function applyTheme(
   return {
     ...options,
     colors,
-    fadeColor: themeConfig.fadeColor ?? options.fadeColor,
+    // An explicit fadeColor wins over the theme's, as explicit colors do
+    fadeColor: options.fadeColor ?? themeConfig.fadeColor,
   };
 }
 
@@ -453,30 +454,4 @@ export function createPreset(
   description?: string
 ): GardenPreset {
   return { name, options, description };
-}
-
-/**
- * Preset for specific density levels
- */
-export function densityPreset(density: Density): Partial<GardenOptions> {
-  const configs: Record<Density, Partial<GardenOptions>> = {
-    sparse: { density: 'sparse', generations: 30 },
-    normal: { density: 'normal', generations: 47 },
-    dense: { density: 'dense', generations: 55 },
-    lush: { density: 'lush', generations: 65 },
-  };
-  return configs[density];
-}
-
-/**
- * Speed presets for different animation tempos
- */
-export function speedPreset(speed: 'slow' | 'normal' | 'fast' | 'instant'): Partial<GardenOptions> {
-  const configs: Record<string, Partial<GardenOptions>> = {
-    slow: { speed: 0.5, duration: 1200 },
-    normal: { speed: 1, duration: 600 },
-    fast: { speed: 2, duration: 300 },
-    instant: { speed: 10, duration: 60 },
-  };
-  return configs[speed];
 }

@@ -11,15 +11,18 @@ import { SeededRandom } from './SeededRandom';
 import { GrowthProgress } from './GrowthProgress';
 import { SimpleEventEmitter } from './EventEmitter';
 import { GrowthProgressPool } from './GrowthProgressPool';
-import { resolveOptions } from './defaults';
+import { resolveOptions, defaultOptions } from './defaults';
 import { buildFlowerColors, buildFoliageColors } from './palettes';
 import { generatePlants, PLANT_CATEGORIES } from './plants/generator';
 import { PlantType } from './types';
+import type { PlantData } from './types';
 import { applyPreset, applyTheme, createConfig, themes, presets } from './presets';
 import { flowerPalettes } from './palettes';
 import { hexToRgb as utilsHexToRgb } from './utils';
 import { hexToRgb as colorHexToRgb } from './Color';
-import { getCompletedGenerations } from './plants/generator';
+import { getCompletedGenerations, getGenerationEndTimes } from './plants/generator';
+import { getPlantVariation } from './plants/variations';
+import { PLANTS_PER_GENERATION } from './constants';
 import { OPTION_BOUNDS } from './constants';
 import * as fc from 'fast-check';
 
@@ -137,15 +140,14 @@ describe('Integration: GrowthProgress + Vec2', () => {
     const stemLength = 40;
 
     const growth = GrowthProgress.fromProgress(0.7);
+    expect(growth.hasLeaves).toBe(true);
 
-    if (growth.hasLeaves) {
-      const leafPosition = stemBase.subtract(new Vec2(0, stemLength * growth.stem * 0.6));
-      const leafOffset = Vec2.fromPolar(-Math.PI / 4, 15 * growth.leaf);
-      const leafTip = leafPosition.add(leafOffset);
+    const leafPosition = stemBase.subtract(new Vec2(0, stemLength * growth.stem * 0.6));
+    const leafOffset = Vec2.fromPolar(-Math.PI / 4, 15 * growth.leaf);
+    const leafTip = leafPosition.add(leafOffset);
 
-      expect(leafTip.x).toBeGreaterThan(stemBase.x);
-      expect(leafTip.y).toBeLessThan(stemBase.y);
-    }
+    expect(leafTip.x).toBeGreaterThan(stemBase.x);
+    expect(leafTip.y).toBeLessThan(stemBase.y);
   });
 
   it('should interpolate positions during growth animation', () => {
@@ -167,167 +169,74 @@ describe('Integration: GrowthProgress + Color', () => {
     const budColor = new Color(100, 150, 100); // Green bud
     const flowerColor = new Color(255, 100, 150); // Pink flower
 
-    for (let t = 0; t <= 1; t += 0.2) {
-      const growth = GrowthProgress.fromProgress(t);
-
-      if (growth.hasFlower) {
-        const currentColor = budColor.mix(flowerColor, growth.flower);
-        // As flower grows, color shifts toward pink
-        expect(currentColor.r).toBeGreaterThanOrEqual(budColor.r);
-      }
-    }
+    // As the flower grows, its color moves steadily from bud to bloom
+    const blooming = [0.6, 0.7, 0.8, 0.9, 1].map((t) => GrowthProgress.fromProgress(t));
+    expect(blooming.every((g) => g.hasFlower)).toBe(true);
+    const reds = blooming.map((g) => budColor.mix(flowerColor, g.flower).r);
+    for (let i = 1; i < reds.length; i++) expect(reds[i]).toBeGreaterThanOrEqual(reds[i - 1]);
+    expect(reds[0]).toBeGreaterThanOrEqual(budColor.r);
+    expect(reds[reds.length - 1]).toBe(flowerColor.r);
   });
 
   it('should fade in leaves with alpha during growth', () => {
     const leafColor = new Color(100, 180, 100);
 
-    for (let t = 0; t <= 1; t += 0.2) {
-      const growth = GrowthProgress.fromProgress(t);
-
-      if (growth.hasLeaves) {
-        const fadedLeaf = leafColor.withAlpha(Math.min(1, growth.leaf * 1.5));
-        expect(fadedLeaf.a).toBeLessThanOrEqual(1);
-        expect(fadedLeaf.a).toBeGreaterThan(0);
-      }
+    const leafy = [0.4, 0.6, 0.8, 1].map((t) => GrowthProgress.fromProgress(t));
+    expect(leafy.every((g) => g.hasLeaves)).toBe(true);
+    for (const growth of leafy) {
+      const fadedLeaf = leafColor.withAlpha(Math.min(1, growth.leaf * 1.5));
+      expect(fadedLeaf.a).toBeLessThanOrEqual(1);
+      expect(fadedLeaf.a).toBeGreaterThan(0);
     }
+    expect(GrowthProgress.fromProgress(1).leaf).toBe(1);
   });
 });
 
-describe('Integration: Full plant simulation', () => {
-  interface PlantData {
-    id: number;
-    position: Vec2;
-    delay: number;
-    duration: number;
-    stemHeight: number;
-    flowerColor: Color;
-  }
+describe('Integration: generatePlants determinism', () => {
+  const base = { seed: 12345, generations: 12, density: 'dense' as const, maxHeight: 0.8 };
 
-  it('should simulate deterministic garden generation', () => {
-    const rng1 = new SeededRandom(12345);
-    const rng2 = new SeededRandom(12345);
-
-    // Generate 10 plants with each RNG
-    const plants1: PlantData[] = [];
-    const plants2: PlantData[] = [];
-
-    for (let i = 0; i < 10; i++) {
-      plants1.push({
-        id: i,
-        position: new Vec2(rng1.range(0, 200), rng1.range(0, 100)),
-        delay: rng1.range(0, 500),
-        duration: rng1.range(1000, 2000),
-        stemHeight: rng1.range(30, 60),
-        flowerColor: Color.fromHSL(rng1.range(0, 360), rng1.range(70, 100), rng1.range(50, 70)),
-      });
-    }
-
-    for (let i = 0; i < 10; i++) {
-      plants2.push({
-        id: i,
-        position: new Vec2(rng2.range(0, 200), rng2.range(0, 100)),
-        delay: rng2.range(0, 500),
-        duration: rng2.range(1000, 2000),
-        stemHeight: rng2.range(30, 60),
-        flowerColor: Color.fromHSL(rng2.range(0, 360), rng2.range(70, 100), rng2.range(50, 70)),
-      });
-    }
-
-    // Verify determinism - all properties should match
-    for (let i = 0; i < 10; i++) {
-      expect(plants1[i].position.equals(plants2[i].position)).toBe(true);
-      expect(plants1[i].delay).toBe(plants2[i].delay);
-      expect(plants1[i].duration).toBe(plants2[i].duration);
-      expect(plants1[i].stemHeight).toBe(plants2[i].stemHeight);
-      expect(plants1[i].flowerColor.equals(plants2[i].flowerColor)).toBe(true);
-    }
+  it('the same options produce an identical garden', () => {
+    const a = generatePlants(resolveOptions({ container: document.createElement('div'), ...base }));
+    const b = generatePlants(resolveOptions({ container: document.createElement('div'), ...base }));
+    expect(a.length).toBeGreaterThan(0);
+    expect(a).toEqual(b);
   });
 
-  it('should render plants at different animation times', () => {
-    const plant: PlantData = {
-      id: 0,
-      position: new Vec2(100, 150),
-      delay: 100,
-      duration: 1000,
-      stemHeight: 50,
-      flowerColor: new Color(255, 100, 150),
-    };
-
-    // Test at various animation times
-    const animationTimes = [0, 100, 350, 600, 1100, 2000];
-
-    for (const time of animationTimes) {
-      const growth = GrowthProgress.calculate(time, plant.delay, plant.duration);
-
-      if (growth.isActive) {
-        const stemTop = plant.position.subtract(new Vec2(0, plant.stemHeight * growth.stem));
-        expect(stemTop.y).toBeLessThanOrEqual(plant.position.y);
-      }
-    }
+  it('a different seed produces a different garden', () => {
+    const a = generatePlants(resolveOptions({ container: document.createElement('div'), ...base }));
+    const b = generatePlants(
+      resolveOptions({ container: document.createElement('div'), ...base, seed: 12346 })
+    );
+    expect(b.map((p) => p.type)).not.toEqual(a.map((p) => p.type));
   });
 });
 
-describe('Integration: EventEmitter + Growth lifecycle', () => {
+describe('Integration: growth phases occur in lifecycle order', () => {
   type GrowthEvents = {
     [key: string]: unknown;
-    start: { plantId: number; time: number };
-    leafAppear: { plantId: number; time: number };
-    flowerAppear: { plantId: number; time: number };
     complete: { plantId: number; time: number };
   };
 
-  it('should emit growth events at correct times', () => {
-    const emitter = new SimpleEventEmitter<GrowthEvents>();
-    const events: string[] = [];
-
-    emitter.on('start', ({ plantId }) => events.push(`start:${plantId}`));
-    emitter.on('leafAppear', ({ plantId }) => events.push(`leaf:${plantId}`));
-    emitter.on('flowerAppear', ({ plantId }) => events.push(`flower:${plantId}`));
-    emitter.on('complete', ({ plantId }) => events.push(`complete:${plantId}`));
-
-    const plantId = 1;
+  it('a plant starts, then leafs, then flowers, then completes', () => {
     const delay = 100;
     const duration = 1000;
-
-    let hasStarted = false;
-    let hasLeaves = false;
-    let hasFlower = false;
-    let isComplete = false;
-
-    // Simulate animation loop
-    for (let time = 0; time <= 1200; time += 100) {
-      const growth = GrowthProgress.calculate(time, delay, duration);
-
-      if (growth.isActive && !hasStarted) {
-        emitter.emit('start', { plantId, time });
-        hasStarted = true;
+    const firstTime = (pred: (g: GrowthProgress) => boolean): number => {
+      for (let time = 0; time <= 1200; time += 10) {
+        if (pred(GrowthProgress.calculate(time, delay, duration))) return time;
       }
+      return Infinity;
+    };
 
-      if (growth.hasLeaves && !hasLeaves) {
-        emitter.emit('leafAppear', { plantId, time });
-        hasLeaves = true;
-      }
+    const start = firstTime((g) => g.isActive);
+    const leaf = firstTime((g) => g.hasLeaves);
+    const flower = firstTime((g) => g.hasFlower);
+    const complete = firstTime((g) => g.isComplete);
 
-      if (growth.hasFlower && !hasFlower) {
-        emitter.emit('flowerAppear', { plantId, time });
-        hasFlower = true;
-      }
-
-      if (growth.isComplete && !isComplete) {
-        emitter.emit('complete', { plantId, time });
-        isComplete = true;
-      }
-    }
-
-    expect(events).toContain('start:1');
-    expect(events).toContain('leaf:1');
-    expect(events).toContain('flower:1');
-    expect(events).toContain('complete:1');
-
-    // Events should be in order
-    expect(events.indexOf('start:1')).toBeLessThan(events.indexOf('leaf:1'));
-    expect(events.indexOf('leaf:1')).toBeLessThan(events.indexOf('flower:1'));
-    expect(events.indexOf('flower:1')).toBeLessThan(events.indexOf('complete:1'));
+    expect(start).toBeGreaterThan(delay - 1);
+    expect(start).toBeLessThan(leaf);
+    expect(leaf).toBeLessThan(flower);
+    expect(flower).toBeLessThan(complete);
+    expect(complete).toBeLessThanOrEqual(delay + duration);
   });
 
   it('should support once listeners for completion', () => {
@@ -809,14 +718,14 @@ describe('Constraint: Pool + Render integration', () => {
   });
 });
 
-// ==================== CONTROL INTERACTION TESTS ====================
-// These tests verify that setOptions() correctly preserves state and
-// that the same configuration produces identical results regardless
-// of the order in which options are set.
+// ==================== CONFIGURATION PASSTHROUGH ====================
+// resolveOptions() must pass explicit options through unchanged, and the
+// same configuration must resolve identically regardless of property order.
+// (setOptions() itself is exercised end-to-end in Garden.test.ts.)
 
-describe('Constraint: setOptions preserves existing options', () => {
+describe('Constraint: resolveOptions passes explicit options through', () => {
 
-  it('should preserve all options when changing one property', () => {
+  it('keeps every explicitly set option', () => {
     // Create base config
     const baseConfig = {
       container: document.createElement('div'),
@@ -864,15 +773,11 @@ describe('Constraint: setOptions preserves existing options', () => {
     expect(resolved.colors.accentWeight).toBe(1);
   });
 
-  it('should use default seed when not provided', () => {
-    const config1 = resolveOptions({ container: document.createElement('div') });
-    const config2 = resolveOptions({ container: document.createElement('div') });
-
-    // Both should have seeds (random but present)
-    expect(config1.seed).toBeDefined();
-    expect(config2.seed).toBeDefined();
-    expect(typeof config1.seed).toBe('number');
-    expect(typeof config2.seed).toBe('number');
+  it('picks a random in-range seed when none is provided', () => {
+    const config = resolveOptions({ container: document.createElement('div') });
+    expect(Number.isFinite(config.seed)).toBe(true);
+    expect(config.seed).toBeGreaterThanOrEqual(0);
+    expect(config.seed).toBeLessThan(OPTION_BOUNDS.SEED.max);
   });
 
   it('should preserve explicit seed across resolutions', () => {
@@ -1063,10 +968,8 @@ describe('Constraint: Plant timing edge cases', () => {
     const plants = generatePlants(resolved);
 
     for (const plant of plants) {
-      expect(plant.growDuration).toBeGreaterThan(0);
-      // Minimum grow duration is max(0.1, duration * 0.01)
-      const minGrow = Math.max(0.1, resolved.duration * 0.01);
-      expect(plant.growDuration).toBeGreaterThanOrEqual(minGrow);
+      // Documented floor: at least 100ms (1% of a 10s duration)
+      expect(plant.growDuration).toBeGreaterThanOrEqual(0.1);
     }
   });
 
@@ -1124,36 +1027,21 @@ describe('Constraint: Options that trigger regeneration', () => {
     }
   });
 
-  it('changing timingCurve should affect plant delays', () => {
-    const container = document.createElement('div');
+  it('timing curves pace generations as named: ease-out early, ease-in late', () => {
+    const avgDelay = (timingCurve: 'linear' | 'ease-out' | 'ease-in' | 'ease-in-out') => {
+      const plants = generatePlants(
+        resolveOptions({ container: document.createElement('div'), seed: 42, generations: 10, timingCurve })
+      );
+      return plants.reduce((sum, p) => sum + p.delay, 0) / plants.length;
+    };
+    const linear = avgDelay('linear');
 
-    const linear = resolveOptions({
-      container,
-      seed: 42,
-      generations: 10,
-      timingCurve: 'linear',
-    });
-
-    const easeOut = resolveOptions({
-      container,
-      seed: 42,
-      generations: 10,
-      timingCurve: 'ease-out',
-    });
-
-    const plants1 = generatePlants(linear);
-    const plants2 = generatePlants(easeOut);
-
-    // Plants should exist in both
-    expect(plants1.length).toBeGreaterThan(0);
-    expect(plants2.length).toBeGreaterThan(0);
-
-    // Delays should be distributed differently
-    const avgDelay1 = plants1.reduce((sum: number, p: { delay: number }) => sum + p.delay, 0) / plants1.length;
-    const avgDelay2 = plants2.reduce((sum: number, p: { delay: number }) => sum + p.delay, 0) / plants2.length;
-
-    // With ease-out, early generations complete faster, so average delay should be lower
-    expect(avgDelay2).not.toBe(avgDelay1);
+    // 'ease-out' = fast start: generations arrive early, so delays are lower
+    expect(avgDelay('ease-out')).toBeLessThan(linear * 0.9);
+    // 'ease-in' = slow start: generations arrive late
+    expect(avgDelay('ease-in')).toBeGreaterThan(linear * 1.1);
+    // 'ease-in-out' is symmetric around the midpoint
+    expect(avgDelay('ease-in-out')).toBeCloseTo(linear, -1);
   });
 
   it('changing duration should scale plant timings', () => {
@@ -1295,33 +1183,35 @@ describe('Constraint: Environment cache behavior', () => {
     expect(env1).not.toBe(env2);
   });
 
-  it('should detect basic capabilities', () => {
+  it('detects the jsdom environment as a browser', () => {
     const env = Environment.detect();
-
-    // Basic checks - these should always be available in test environment
-    expect(typeof env.isBrowser).toBe('boolean');
-    expect(typeof env.hasCanvas).toBe('boolean');
-    expect(typeof env.hasRAF).toBe('boolean');
-    expect(typeof env.pixelRatio).toBe('number');
-    expect(typeof env.isMobile).toBe('boolean');
-    expect(typeof env.prefersReducedMotion).toBe('boolean');
+    expect(env.isBrowser).toBe(true);
+    expect(env.pixelRatio).toBe(window.devicePixelRatio || 1);
+    expect(env.prefersReducedMotion).toBe(false); // matchMedia mock: no match
   });
 
-  it('onReducedMotionChange should return cleanup function', () => {
-    // Trigger detection first
-    Environment.detect();
+  it('onReducedMotionChange forwards changes, invalidates the cache, and unsubscribes', () => {
+    let registered: ((e: { matches: boolean }) => void) | null = null;
+    const removeEventListener = vi.fn();
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: (_: string, h: (e: { matches: boolean }) => void) => {
+        registered = h;
+      },
+      removeEventListener,
+    }));
 
-    // Set up listener
-    const cleanup = Environment.onReducedMotionChange(() => {
-      // Can't easily trigger media query change in tests
-    });
+    const cached = Environment.detect();
+    const seen: boolean[] = [];
+    const cleanup = Environment.onReducedMotionChange((reduced) => seen.push(reduced));
 
-    try {
-      // Verify the cleanup function works
-      expect(typeof cleanup).toBe('function');
-    } finally {
-      cleanup();
-    }
+    registered!({ matches: true });
+    expect(seen).toEqual([true]);
+    expect(Environment.detect()).not.toBe(cached); // cache invalidated
+
+    cleanup();
+    expect(removeEventListener).toHaveBeenCalledWith('change', registered);
   });
 
   it('multiple resize listeners should work correctly', () => {
@@ -1367,9 +1257,9 @@ describe('Constraint: Environment utility methods', () => {
     vi.unstubAllGlobals();
   });
 
-  it('isSupported should check required capabilities', () => {
-    const supported = Environment.isSupported();
-    expect(typeof supported).toBe('boolean');
+  it('isSupported is the conjunction of browser, canvas and rAF support', () => {
+    const env = Environment.detect();
+    expect(Environment.isSupported()).toBe(env.isBrowser && env.hasCanvas && env.hasRAF);
   });
 
   it('getRecommendedSettings should return valid settings', () => {
@@ -1383,19 +1273,32 @@ describe('Constraint: Environment utility methods', () => {
     expect(settings.targetFPS).toBeGreaterThan(0);
   });
 
-  it('isPageVisible should return boolean', () => {
-    const visible = Environment.isPageVisible();
-    expect(typeof visible).toBe('boolean');
+  it('isPageVisible follows document.hidden', () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get');
+    hidden.mockReturnValue(true);
+    expect(Environment.isPageVisible()).toBe(false);
+    hidden.mockReturnValue(false);
+    expect(Environment.isPageVisible()).toBe(true);
+    hidden.mockRestore();
   });
 
-  it('prefersReducedMotion should return boolean', () => {
-    const reduced = Environment.prefersReducedMotion();
-    expect(typeof reduced).toBe('boolean');
-  });
+  it('media preferences follow their media queries, queried fresh each time', () => {
+    let matching = '';
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes(matching) && matching !== '',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
 
-  it('prefersDarkMode should return boolean', () => {
-    const dark = Environment.prefersDarkMode();
-    expect(typeof dark).toBe('boolean');
+    expect(Environment.prefersReducedMotion()).toBe(false);
+    expect(Environment.prefersDarkMode()).toBe(false);
+    matching = 'prefers-reduced-motion';
+    expect(Environment.prefersReducedMotion()).toBe(true);
+    expect(Environment.prefersDarkMode()).toBe(false);
+    matching = 'prefers-color-scheme: dark';
+    expect(Environment.prefersDarkMode()).toBe(true);
+    expect(Environment.prefersReducedMotion()).toBe(false);
   });
 });
 
@@ -1407,6 +1310,7 @@ describe('Constraint: Category validation warnings', () => {
       // parseCategoryFilter is called within generatePlants, not resolveOptions
       const resolved = resolveOptions({
         container: document.createElement('div'),
+        seed: 7,
         categories: ['invalid-category-name', 'rose'],
       });
 
@@ -1431,6 +1335,7 @@ describe('Constraint: Category validation warnings', () => {
     try {
       const resolved = resolveOptions({
         container: document.createElement('div'),
+        seed: 7,
         categories: ['rose', 'tulip', 'daisy', 'grass'],
       });
 
@@ -1452,22 +1357,24 @@ describe('Constraint: Growth duration minimum enforcement', () => {
   it('should enforce minimum grow duration even with extreme timing curves', () => {
     const resolved = resolveOptions({
       container: document.createElement('div'),
+      seed: 7,
       generations: 100,
       duration: 10,
       timingCurve: 3, // Extreme ease-out
     });
 
     const plants = generatePlants(resolved);
-    const minGrow = Math.max(0.1, resolved.duration * 0.01);
 
     for (const plant of plants) {
-      expect(plant.growDuration).toBeGreaterThanOrEqual(minGrow);
+      // Documented floor: at least 100ms (1% of a 10s duration)
+      expect(plant.growDuration).toBeGreaterThanOrEqual(0.1);
     }
   });
 
   it('should have all plants visible before animation ends', () => {
     const resolved = resolveOptions({
       container: document.createElement('div'),
+      seed: 7,
       generations: 50,
       duration: 60,
       timingCurve: 'ease-out',
@@ -1698,8 +1605,7 @@ describe('Constraint: non-finite numeric options fall back to defaults', () => {
         seed: 42,
         [key]: bad,
       } as never);
-      const value = resolved[key] as number;
-      expect(Number.isFinite(value), `${key} = ${bad}`).toBe(true);
+      expect(resolved[key], `${key} = ${bad}`).toBe(defaultOptions[key]);
     }
   });
 
@@ -1711,13 +1617,18 @@ describe('Constraint: non-finite numeric options fall back to defaults', () => {
     expect(Number.isFinite(resolved.seed)).toBe(true);
   });
 
-  it('keeps negative seeds distinct instead of clamping them all to zero', () => {
+  it('wraps seeds modulo the seed range instead of clamping them to zero', () => {
     const container = document.createElement('div');
+    const { max } = OPTION_BOUNDS.SEED;
     const a = resolveOptions({ container, seed: -5 });
     const b = resolveOptions({ container, seed: 0 });
     const c = resolveOptions({ container, seed: -6 });
     expect(a.seed).not.toBe(b.seed);
     expect(a.seed).not.toBe(c.seed);
+    // Seeds a whole range apart coincide, as normalizeSeed documents
+    expect(resolveOptions({ container, seed: -1 }).seed).toBe(
+      resolveOptions({ container, seed: max - 1 }).seed
+    );
   });
 
   it('clamps accentWeight into [0, 1]', () => {
@@ -1725,9 +1636,9 @@ describe('Constraint: non-finite numeric options fall back to defaults', () => {
     const high = resolveOptions({ container, colors: { accentWeight: 5 } });
     const low = resolveOptions({ container, colors: { accentWeight: -1 } });
     const bad = resolveOptions({ container, colors: { accentWeight: NaN } });
-    expect(high.colors.accentWeight).toBeLessThanOrEqual(1);
-    expect(low.colors.accentWeight).toBeGreaterThanOrEqual(0);
-    expect(Number.isFinite(bad.colors.accentWeight)).toBe(true);
+    expect(high.colors.accentWeight).toBe(1);
+    expect(low.colors.accentWeight).toBe(0);
+    expect(bad.colors.accentWeight).toBe(0.4); // documented default
   });
 });
 
@@ -2036,28 +1947,68 @@ describe('Constraint: partial-config merges ignore explicit undefined', () => {
 
 // ==================== GENERATION BOUNDARY MATH ====================
 
-describe('Constraint: getCompletedGenerations is the single source of boundary math', () => {
-  it('is 0 before the first boundary and N at the end', () => {
-    expect(getCompletedGenerations(0, 100, 10)).toBe(0);
-    expect(getCompletedGenerations(9.99, 100, 10)).toBe(0);
-    expect(getCompletedGenerations(10, 100, 10)).toBe(1);
-    expect(getCompletedGenerations(100, 100, 10)).toBe(10);
-    expect(getCompletedGenerations(250, 100, 10)).toBe(10); // capped
+describe('Constraint: generation boundaries come from the plants themselves', () => {
+  const curves = ['linear', 'ease-out', 'ease-in', 'ease-in-out', 3, 0.4] as const;
+
+  it.each(curves)('generation g ends when every plant up to g has grown (%s)', (timingCurve) => {
+    const resolved = resolveOptions({
+      container: document.createElement('div'),
+      seed: 42,
+      generations: 12,
+      duration: 60,
+      timingCurve,
+    });
+    const plants = generatePlants(resolved);
+    const ends = getGenerationEndTimes(plants, 12, 60);
+
+    expect(ends).toHaveLength(12);
+    expect(ends[ends.length - 1]).toBe(60);
+    for (let g = 0; g < 12; g++) {
+      const latest = Math.max(
+        ...plants.filter((p) => p.generation <= g).map((p) => p.delay + p.growDuration)
+      );
+      expect(ends[g]).toBeCloseTo(Math.min(60, latest), 9);
+      if (g > 0) expect(ends[g]).toBeGreaterThanOrEqual(ends[g - 1]);
+    }
+  });
+
+  it('a later generation never completes before an earlier one', () => {
+    // Generation 0 has a slow plant that outlasts all of generation 1
+    const plants = [
+      { generation: 0, delay: 0, growDuration: 9 },
+      { generation: 1, delay: 2, growDuration: 3 },
+      { generation: 2, delay: 6, growDuration: 4 },
+    ] as PlantData[];
+    expect(getGenerationEndTimes(plants, 3, 10)).toEqual([9, 9, 10]);
+    // Overshoot from floating-point error is clamped to the duration
+    expect(getGenerationEndTimes(plants, 3, 9.5)).toEqual([9, 9, 9.5]);
+  });
+
+  it('counts the generations whose end time has passed', () => {
+    const ends = [1, 2.5, 2.5, 7, 10];
+    expect(getCompletedGenerations(0, ends)).toBe(0);
+    expect(getCompletedGenerations(0.999, ends)).toBe(0);
+    expect(getCompletedGenerations(1, ends)).toBe(1);
+    expect(getCompletedGenerations(2.5, ends)).toBe(3); // shared end time
+    expect(getCompletedGenerations(9.99, ends)).toBe(4);
+    expect(getCompletedGenerations(10, ends)).toBe(5);
+    expect(getCompletedGenerations(250, ends)).toBe(5); // capped
   });
 
   it('is monotone in time and bounded by the generation count', () => {
     fc.assert(
       fc.property(
-        fc.double({ min: 0, max: 1000, noNaN: true }),
-        fc.double({ min: 0, max: 1000, noNaN: true }),
-        fc.integer({ min: 1, max: 200 }),
-        (t1, t2, gens) => {
+        fc.double({ min: 0, max: 100, noNaN: true }),
+        fc.double({ min: 0, max: 100, noNaN: true }),
+        fc.array(fc.double({ min: 0, max: 100, noNaN: true }), { minLength: 1, maxLength: 50 }),
+        (t1, t2, raw) => {
+          const ends = [...raw].sort((x, y) => x - y);
           const [lo, hi] = t1 <= t2 ? [t1, t2] : [t2, t1];
-          const a = getCompletedGenerations(lo, 600, gens);
-          const b = getCompletedGenerations(hi, 600, gens);
+          const a = getCompletedGenerations(lo, ends);
+          const b = getCompletedGenerations(hi, ends);
           expect(a).toBeLessThanOrEqual(b);
-          expect(b).toBeLessThanOrEqual(gens);
-          expect(a).toBeGreaterThanOrEqual(0);
+          expect(b).toBeLessThanOrEqual(ends.length);
+          expect(a).toBe(ends.filter((e) => e <= lo && lo > 0).length);
         }
       ),
       { numRuns: 200 }
@@ -2065,10 +2016,10 @@ describe('Constraint: getCompletedGenerations is the single source of boundary m
   });
 
   it('degenerate inputs return 0', () => {
-    expect(getCompletedGenerations(NaN, 100, 10)).toBe(0);
-    expect(getCompletedGenerations(50, 0, 10)).toBe(0);
-    expect(getCompletedGenerations(50, 100, 0)).toBe(0);
-    expect(getCompletedGenerations(-5, 100, 10)).toBe(0);
+    expect(getCompletedGenerations(NaN, [1, 2])).toBe(0);
+    expect(getCompletedGenerations(-5, [1, 2])).toBe(0);
+    expect(getCompletedGenerations(5, [])).toBe(0);
+    expect(getGenerationEndTimes([], 0, 10)).toEqual([]);
   });
 });
 
@@ -2123,6 +2074,24 @@ describe('Exhaustive: numeric options clamp exactly at their bounds', () => {
     ['zIndex', OPTION_BOUNDS.Z_INDEX],
   ] as const;
 
+  // The documented ranges (README option tables), pinned independently of
+  // OPTION_BOUNDS so a wrong bounds table cannot pass by construction
+  const documented: Record<string, [number, number]> = {
+    duration: [1, 86400],
+    generations: [1, 1000],
+    maxHeight: [0.05, 1],
+    speed: [0.01, 100],
+    maxPixelRatio: [0.5, 4],
+    targetFPS: [1, 120],
+    opacity: [0, 1],
+    fadeHeight: [0, 1],
+    zIndex: [-9999, 9999],
+  };
+
+  it.each(cases)('%s bounds match the documented range', (key, { min, max }) => {
+    expect([min, max]).toEqual(documented[key]);
+  });
+
   it.each(cases)('%s clamps to [min, max]', (key, { min, max }) => {
     const container = document.createElement('div');
     const resolve = (value: number) =>
@@ -2139,5 +2108,72 @@ describe('Exhaustive: numeric options clamp exactly at their bounds', () => {
     const { max } = OPTION_BOUNDS.SEED;
     expect(resolveOptions({ container, seed: max + 5 }).seed).toBe(5);
     expect(resolveOptions({ container, seed: -1 }).seed).toBe(max - 1);
+  });
+});
+
+// ==================== PLANT COUNTS AND HEIGHTS ====================
+
+describe('Constraint: plants per generation span the density range', () => {
+  it.each(['sparse', 'normal', 'dense', 'lush'] as const)('%s', (density) => {
+    const [min, max] = PLANTS_PER_GENERATION[density];
+    const counts = new Map<number, number>();
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const plants = generatePlants(
+        resolveOptions({ container: document.createElement('div'), seed, density, generations: 40 })
+      );
+      const perGen = new Array(40).fill(0);
+      for (const p of plants) perGen[p.generation]++;
+      for (const n of perGen) counts.set(n, (counts.get(n) ?? 0) + 1);
+    }
+    const seen = [...counts.keys()];
+    expect(Math.min(...seen)).toBe(min);
+    expect(Math.max(...seen)).toBe(max); // the top of the range is reachable
+  });
+});
+
+describe('Constraint: maxHeight caps the drawn plant height', () => {
+  it.each([0.05, 0.2, 0.35, 0.5, 0.8, 1])('maxHeight %s', (maxHeight) => {
+    for (const seed of [1, 2, 3]) {
+      const plants = generatePlants(
+        resolveOptions({
+          container: document.createElement('div'),
+          seed,
+          maxHeight,
+          density: 'lush',
+          generations: 60,
+        })
+      );
+      for (const p of plants) {
+        // Renderers draw maxHeight x the type's heightMultiplier
+        const drawn = p.maxHeight * getPlantVariation(p.type).heightMultiplier;
+        expect(drawn).toBeLessThanOrEqual(maxHeight + 1e-12);
+      }
+    }
+  });
+});
+
+describe('Constraint: a seed pins the same garden on every engine', () => {
+  // Golden fingerprint of generatePlants for seed 42. Changing it means
+  // every user's seeded garden changes: note it in the CHANGELOG.
+  it('seed 42 produces the pinned garden', () => {
+    const plants = generatePlants(
+      resolveOptions({ container: document.createElement('div'), seed: 42, generations: 8 })
+    );
+    const fingerprint = plants
+      .slice(0, 6)
+      .map((p) => `${p.type}@${p.x.toFixed(6)}h${p.maxHeight.toFixed(6)}d${p.delay.toFixed(4)}`);
+    expect({ count: plants.length, fingerprint }).toMatchInlineSnapshot(`
+      {
+        "count": 78,
+        "fingerprint": [
+          "hollyhock-double@0.422956h0.318182d104.0925",
+          "foxglove@0.960092h0.302167d383.8195",
+          "delphinium-tall@0.696601h0.250000d389.2531",
+          "lily-tiger@0.233765h0.230039d174.5788",
+          "rose-wild@0.817112h0.225169d548.3664",
+          "hydrangea@0.363776h0.224185d454.5219",
+        ],
+      }
+    `);
   });
 });

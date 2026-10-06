@@ -66,7 +66,7 @@ export const foliagePalettes: Record<ColorPalette, { leaves: string[]; stems: st
     stems: ['#2D5A47', '#3D6B57', '#4A7C60', '#5D8A72'],
   },
   grayscale: {
-    leaves: ['#696969', '#808080', '#A9A9A9', '#778899', '#708090'],
+    leaves: ['#696969', '#808080', '#A9A9A9', '#868686', '#7E7E7E'],
     stems: ['#4D4D4D', '#5D5D5D', '#6A6A6A', '#7D7D7D'],
   },
   vibrant: {

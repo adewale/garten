@@ -435,6 +435,55 @@ describe('Timing curve properties', () => {
       expect(applyTimingCurve(clamped, total, 'linear')).toBeCloseTo(clamped / total, 10);
     }));
   });
+
+  // Start times are the *inverse* of the named easing: a fast-start curve
+  // ('ease-out') starts generations earlier than linear, 'ease-in' later
+  it('ease-out starts every inner generation earlier than linear, ease-in later', () => {
+    fc.assert(fc.property(fc.integer({ min: 2, max: 100 }), (total) => {
+      for (let g = 1; g < total; g++) {
+        const linear = g / total;
+        expect(applyTimingCurve(g, total, 'ease-out')).toBeLessThan(linear);
+        expect(applyTimingCurve(g, total, 'ease-in')).toBeGreaterThan(linear);
+      }
+    }));
+  });
+
+  it('numeric exponents: >1 behaves like ease-out, <1 like ease-in', () => {
+    fc.assert(fc.property(
+      fc.double({ min: 1.05, max: 10, noNaN: true }),
+      fc.integer({ min: 2, max: 50 }),
+      (e, total) => {
+        const g = Math.floor(total / 2) || 1;
+        expect(applyTimingCurve(g, total, e)).toBeLessThan(g / total);
+        expect(applyTimingCurve(g, total, 1 / e)).toBeGreaterThan(g / total);
+      }
+    ));
+  });
+
+  it('start times invert the matching GrowthProgress easing', () => {
+    // eased('ease-out') = t(2 - t), eased('ease-in') = t^2: the share of
+    // generations started at a curve's start time is the generation index
+    for (const [curve, ease] of [
+      ['ease-out', (t: number) => t * (2 - t)],
+      ['ease-in', (t: number) => t * t],
+      ['ease-in-out', (t: number) => t * t * (3 - 2 * t)],
+    ] as const) {
+      for (let g = 0; g <= 20; g++) {
+        expect(ease(applyTimingCurve(g, 20, curve))).toBeCloseTo(g / 20, 10);
+      }
+    }
+  });
+
+  it('ease-in-out is symmetric: slow at both ends, fast in the middle', () => {
+    for (let g = 0; g <= 20; g++) {
+      const a = applyTimingCurve(g, 20, 'ease-in-out');
+      const b = applyTimingCurve(20 - g, 20, 'ease-in-out');
+      expect(a + b).toBeCloseTo(1, 10);
+    }
+    const edge = applyTimingCurve(1, 20, 'ease-in-out') - applyTimingCurve(0, 20, 'ease-in-out');
+    const middle = applyTimingCurve(11, 20, 'ease-in-out') - applyTimingCurve(10, 20, 'ease-in-out');
+    expect(edge).toBeGreaterThan(middle); // first generation gets a longer slot
+  });
 });
 
 // ==================== UTILITY FUNCTION TESTS ====================
