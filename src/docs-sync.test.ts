@@ -16,7 +16,8 @@ import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { themes, presets } from './presets';
 import { PLANT_CATEGORIES } from './plants';
-import { defaultOptions } from './defaults';
+import { defaultOptions, defaultColorOptions } from './defaults';
+import { OPTION_BOUNDS } from './constants';
 import { GEN_SEED_STRIDE, PLANT_SEED_STRIDE } from './plants/generator';
 import { GARDEN_EVENT_TYPES, PlantType } from './types';
 
@@ -52,6 +53,53 @@ describe('Doc sync: README documents the full public API', () => {
 
   it.each([...GARDEN_EVENT_TYPES])('event "%s" is documented in the README', (event) => {
     expect(readme).toContain(`'${event}'`);
+  });
+});
+
+describe('Doc sync: README option defaults match the code', () => {
+  // Rows look like: | `name` | type | `default` | description |
+  // Cells are split on unescaped pipes (types contain `\|`).
+  const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const tableRows = readme
+    .split('\n')
+    .filter((line) => line.startsWith('|'))
+    .map((line) => line.split(/(?<!\\)\|/).slice(1, -1).map((cell) => cell.trim()));
+  // Only 4-column option tables have a Default column
+  const defaultCells = (option: string): string[] =>
+    tableRows
+      .filter((cells) => cells.length === 4 && cells[0] === `\`${option}\``)
+      .map((cells) => cells[2]);
+  // How the README writes a default: strings quoted, numbers/booleans bare
+  const asCell = (value: string | number | boolean): string =>
+    typeof value === 'string' ? `\`'${value}'\`` : `\`${String(value)}\``;
+
+  const isScalar = (value: unknown): value is string | number | boolean =>
+    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+  const scalarDefaults: Array<[string, string | number | boolean]> = [
+    ...Object.entries(defaultOptions).filter(([, value]) => isScalar(value)),
+    ...Object.entries(defaultColorOptions)
+      .filter(([, value]) => isScalar(value))
+      .map(([key, value]) => [`colors.${key}`, value] as [string, unknown]),
+  ] as Array<[string, string | number | boolean]>;
+
+  it('finds scalar defaults to check', () => {
+    expect(scalarDefaults.length).toBeGreaterThan(10);
+  });
+
+  it.each(scalarDefaults)('README default for `%s` is %s', (option, value) => {
+    const cells = defaultCells(option);
+    expect(cells.length, `no README table row for "${option}"`).toBeGreaterThan(0);
+    for (const cell of cells) {
+      expect(cell, `README default for "${option}"`).toBe(asCell(value));
+    }
+  });
+
+  it('README states the setSpeed/speed bounds from OPTION_BOUNDS', () => {
+    const { min, max } = OPTION_BOUNDS.SPEED;
+    // \b so e.g. "0.01-1000" cannot satisfy a bound of 100
+    expect(readme).toMatch(
+      new RegExp(`\\b${escapeRegExp(String(min))}-${escapeRegExp(String(max))}\\b`)
+    );
   });
 });
 

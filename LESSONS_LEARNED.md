@@ -161,7 +161,7 @@ A call-recording canvas mock happily reported `quadraticCurveTo` called 8 times 
 
 The seed-stride collision (gen stride 1000 < 30 plants × 100) and the pool-cap crash (OPTION_BOUNDS allows ~30,000 plants; pool hard-capped at 16,384) were both pairs of *individually plausible* constants that nobody ever checked against each other. There was no place where "no two plants may share an RNG stream" or "the pool must cover the worst legal config" was stated.
 
-**Lesson:** cross-cutting invariants must be articulated as executable tests (`constants.test.ts`). When a re-introduced seed-stride bug is killed by the *invariant* test before any behavioral test fires, the invariant is doing its job.
+**Lesson:** cross-cutting invariants must be articulated as executable tests (the seed-stride invariants live in `constants.test.ts`; the pool-capacity one in `Garden.test.ts`, "Constraint: pool capacity covers the worst legal configuration"). When a re-introduced seed-stride bug is killed by the *invariant* test before any behavioral test fires, the invariant is doing its job.
 
 ## 18. Documentation Claims Need Failing Conditions
 

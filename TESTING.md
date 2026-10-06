@@ -42,8 +42,8 @@ a boundary no test crossed.
 | Plant data → canvas | `plants/render-sweep.test.ts` | **exhaustive**: all 147 plant types × 6 growth stages × extreme variations under the strict semantic mock |
 | Time → controller state/events | `Garden.test.ts` | fake rAF + fake `performance`; includes a hand-driven rAF for true background-tab (single-frame jump) simulation |
 | Canvas lifecycle (resize, background, fade) | `Garden.test.ts` (Renderer sections) | recording mock + behavior assertions (frame survives resize, transparent default) |
-| Constants ↔ constants | `constants.test.ts` | cross-invariants: seed strides vs density maxima, defaults within bounds, pool capacity vs worst legal config |
-| Code ↔ documentation | `docs-sync.test.ts` | code is the source of truth: themes/presets/categories/options/events must appear in README; counts asserted against enums; browser claims parsed from `tsup.config.ts` |
+| Constants ↔ constants | `constants.test.ts`, `Garden.test.ts` | cross-invariants: seed strides vs density maxima, defaults within bounds (`constants.test.ts`); pool capacity vs worst legal config (`Garden.test.ts`, "Constraint: pool capacity covers the worst legal configuration") |
+| Code ↔ documentation | `docs-sync.test.ts` | code is the source of truth: themes/presets/categories/options/events must appear in README; README option-table defaults match `defaultOptions` and the speed bound matches `OPTION_BOUNDS`; counts asserted against enums; browser claims parsed from `tsup.config.ts` |
 | Source ↔ shipped bundles | `npm run check:dist` (es-check) | dist must parse at the documented minimum browser syntax level |
 | Pure math/value objects | `property.test.ts`, unit suites | fast-check algebraic properties + examples |
 
@@ -98,13 +98,16 @@ cannot see:
 
 - **Pixel probes** (platform-independent): background alpha is 0 by default
   and exactly the configured color with the `background` option; a completed
-  garden paints >5k pixels in the bottom band and none above `maxHeight`; a
-  `maxHeight: 1` garden paints the *top* band (the formerly-invisible tall
+  default garden (`maxHeight: 0.35`) paints >5k pixels in the bottom third
+  of the canvas and none in the top third (a coarse bound: it would not
+  catch plants overshooting `maxHeight` by less than about 0.3 of the
+  height); a `maxHeight: 1` garden paints the *top* band (the formerly-invisible tall
   region); the same seed produces a **byte-identical** bitmap across page
   loads; a real `ResizeObserver` resize repaints the frame while idle.
 - **Golden screenshots** (change detection): three committed Linux-Chromium
   goldens (default complete, mid-growth, tall-on-dark). Regenerate with
-  `npm run test:visual -- --update-snapshots`; AA is the only variance
+  `npm run build && npm run test:visual -- --update-snapshots` (the fixture
+  loads `dist/index.global.js`, and `test:visual` does not build); AA is the only variance
   (no text is rendered), budgeted at `maxDiffPixelRatio: 0.01`.
 
 ```bash

@@ -60,27 +60,46 @@ Gen N: ░░░░░░░░░░░░░░░░░░░░░░░░�
 
 ### 3. Timing Curves
 
-The `timingCurve` option warps how time is distributed across generations:
+The `timingCurve` option sets how generations are spread over the
+duration. The curve describes the fraction of generations that have started
+by time `t` (the same meaning as `GrowthProgress.eased`):
 
 ```
+Generations started vs. time
+
 Linear (default):         Ease-out (fast start):
 Gen │                     Gen │
- N  │        ●             N  │                  ●
-    │      ●                  │               ●
-    │    ●                    │            ●
-    │  ●                      │        ●
- 0  │●                      0 │●●●●
+ N  │        ●             N  │          ●
+    │      ●                  │      ●
+    │    ●                    │   ●
+    │  ●                      │ ●
+ 0  │●                      0 │●
     └──────────▶              └──────────▶
          Time                      Time
 ```
 
-Implementation uses time warping:
+Ease-out is steep at the start (many generations begin early, close
+together) and flattens toward the end. Ease-in is the mirror image, and
+ease-in-out is an S-curve.
+
+Since the curve maps time to generations, a generation's start time is the
+curve's inverse applied to its index. `applyTimingCurve(g, N, curve)`
+returns that inverse:
+
 ```typescript
+// x = g / N
+// linear:       x
+// ease-out (e): 1 - (1 - x) ** (1 / e)   // 'ease-out' uses e = 2
+// ease-in  (e): x ** e                    // 'ease-in' uses e = 0.5 (power 2)
+// ease-in-out:  0.5 - Math.sin(Math.asin(1 - 2 * x) / 3)  // inverse smoothstep
 warpedStart = applyTimingCurve(gen, totalGens, curve);
 warpedEnd = applyTimingCurve(gen + 1, totalGens, curve);
 genDelay = warpedStart * duration;
 genDuration = (warpedEnd - warpedStart) * duration;
 ```
+
+Numeric curves are clamped to 0.1-10; values above 1 are ease-out of that
+power, values below 1 are ease-in of power `1/e`.
 
 ## Data Structures
 
@@ -208,7 +227,7 @@ User options are merged with defaults to create `ResolvedOptions`:
 ┌─────────────────────────────────────────────────────────────────┐
 │  For each generation g in [0, generations):                      │
 │    │                                                            │
-│    ├─▶ Calculate timing via timingCurve                         │
+│    ├─▶ Calculate timing via timingCurve (inverse easing)        │
 │    │     warpedStart = applyTimingCurve(g, total, curve)        │
 │    │     genDelay = warpedStart * duration                      │
 │    │                                                            │
@@ -238,7 +257,8 @@ The accent color system ensures brand colors appear prominently:
 Input: accent=#F6821F, palette=natural, accentWeight=0.4
 
 1. Generate accent variants:
-   [#F6821F, #F89B4B, #D16E1A, #FAB478, #E07A1C]  (5 colors)
+   [#F6821F, #f79541, #d16f1a, #f9a862, #e2781d]  (5 colors:
+    accent, lighten 0.15, darken 0.15, lighten 0.3, darken 0.08)
 
 2. Get base palette:
    [#E85D75, #D64550, ..., #FAF0E6]  (16 colors)
@@ -276,7 +296,7 @@ class Garten {
       // so seek()/setSpeed() stay exact and background tabs catch up
       this.elapsedTime = (timestamp - this.startTime) * this.speed / 1000;
 
-      // Fire one event per generation boundary crossed since last frame
+      // Fire one event per generation that finished growing since last frame
       this.emitGenerationEvents();
 
       this.renderer.render(this.plants, Math.min(this.elapsedTime, this.duration));
@@ -343,52 +363,46 @@ const flower = Math.max(0, Math.min(1, (progress - 0.5) * 2)); // FLOWER_START/R
 
 ### Category Renderers
 
-Each category has a specialized renderer:
+Each category has a renderer, written inline in a local `Record` in
+`src/plants/renderers.ts`. Each one draws the stem and leaves and then calls
+a flower/foliage helper (`drawSimpleFlower`, `drawTulip`, `drawGrass`, ...):
 
 ```typescript
-const categoryRenderers: Record<PlantCategory, RenderFunction> = {
-  [PlantCategory.SimpleFlower]: drawSimpleFlower,
-  [PlantCategory.Tulip]: drawTulip,
-  [PlantCategory.Daisy]: drawDaisy,
-  [PlantCategory.Grass]: drawGrass,
-  [PlantCategory.Fern]: drawFern,
-  [PlantCategory.Bush]: drawBush,
-  [PlantCategory.Rose]: drawRose,
-  // ... etc
+const categoryRenderers: Record<PlantCategory, CategoryRenderer> = {
+  [PlantCategory.SimpleFlower]: (ctx, plant, width, height, time, variation, pool) => { ... },
+  [PlantCategory.Tulip]: (ctx, plant, width, height, time, variation, pool) => { ... },
+  // ... one entry per category (19)
 };
 ```
 
-Within each renderer, `PlantVariation` parameters modify the output:
+Within each renderer, `PlantVariation` parameters modify the output. The
+variation is passed in (cached on the plant at generation time, or looked
+up with `getPlantVariation(type)`), and the flower helpers take it as their
+last argument:
 
 ```typescript
-function drawTulip(ctx, plant, x, y, height, growth) {
-  const variation = getVariation(plant.type);
+// Shared render context: drawn height includes the variation
+plantHeight = plant.maxHeight * height * variation.heightMultiplier;
 
-  // Apply variation multipliers
-  const actualHeight = height * variation.heightMultiplier;
-  const flowerSize = baseSize * variation.sizeMultiplier;
-  const stemThickness = baseThickness * variation.thicknessMultiplier;
-  const petalCount = basePetals + variation.petalCountModifier;
+// Tulip category renderer
+const top = drawStem(ctx, x, baseY, plantHeight,
+  2.5 * plant.scale * variation.thicknessMultiplier,
+  plant.stemColor, plant.lean * 0.5 * variation.leanMultiplier, phases.stem);
 
-  // Draw with modified parameters...
-}
+// Flower helper: drawTulip(ctx, x, y, size, color, growth, variation)
+const s = size * growth * variation.sizeMultiplier;
+if (variation.complexity > 0.6) { /* add stripes */ }
 ```
 
 ## Performance Optimizations
 
-### 1. Pre-allocation
+### 1. Generate once, reuse every frame
 
-Arrays are pre-allocated to avoid repeated resizing:
-
-```typescript
-const estimatedTotal = Math.ceil(generations * avgPlantsPerGen * 1.1);
-const plants: PlantData[] = [];
-plants.length = estimatedTotal;  // Pre-allocate
-
-// Fill array...
-
-plants.length = actualCount;  // Trim to actual size
-```
+All plants are generated once (in the constructor, on `regenerate()`, and
+when `setOptions()` changes a generation input) into a plain array with
+`push`. Per-plant `category` and `variation` are cached on the `PlantData`
+so the render loop does no lookups, and growth phases come from a
+frame-scoped `GrowthProgressPool` so rendering does not allocate.
 
 ### 2. O(1) Lookups
 
@@ -398,29 +412,35 @@ Maps are built at module load time:
 // Type → Category lookup
 const plantTypeToCategory: Map<PlantType, PlantCategory> = new Map();
 
-// Type → Variation lookup
-const plantVariations: Map<PlantType, PlantVariation> = new Map();
+// Type → sparse variation overrides (src/plants/variations.ts);
+// getPlantVariation(type) merges them over defaultVariation
+const variationOverrides: Map<PlantType, PartialVariation> = new Map([...]);
 
 // Category → Renderer lookup
-const categoryRenderers: Record<PlantCategory, RenderFunction> = { ... };
+const categoryRenderers: Record<PlantCategory, CategoryRenderer> = { ... };
 ```
 
 ### 3. Seeded Random
 
 Per-plant seeds enable deterministic rendering without storing random values.
-The strides are chosen so no two plants can ever share an RNG stream — the
-generation stride (100,000) exceeds the largest possible per-plant offset,
-and the per-generation count RNG sits at +50,000, clear of all plant streams
-(an invariant pinned by `src/constants.test.ts`):
+The strides are chosen so no two plants can share a generation-time RNG
+stream — the generation stride (100,000) exceeds the largest possible
+per-plant offset, and the per-generation count RNG sits at +50,000, clear of
+all plant streams (an invariant pinned by `src/constants.test.ts`):
 
 ```typescript
 // GEN_SEED_STRIDE = 100_000, PLANT_SEED_STRIDE = 137
 plant.seed = baseSeed + gen * 100_000 + p * 137;
-
-// During rendering, recreate the same random sequence
-const rand = createRandom(plant.seed);
-const wobble = rand() * 0.1;  // Same value every frame
+const plantRand = createRandom(plant.seed); // type, x, height, colors, timing...
 ```
+
+Renderers reuse `plant.seed` for decorative detail (grass blade counts and
+lean, bush leaf-cluster and flower positions), so it is the same every frame. They hash it
+directly rather than creating a stream: `seededRandom(seed + i * 10)` and
+similar offsets in `renderers.ts`, or a shared `SeededRandom` instance
+re-seeded per plant (`_tallPlantRng.setSeed(plant.seed)`) for the tall
+categories. These render-time offsets are not stride-separated, so two
+plants can get the same decorative values; that is cosmetic only.
 
 ### 4. Sorted Rendering
 
@@ -512,15 +532,21 @@ garden.getElapsedTime() // Seconds
 
 ```typescript
 garden.setOptions({...})  // Update options (may regenerate plants)
-garden.regenerate()       // Force new random garden
+garden.regenerate()       // Rebuild plants from current options (same seed)
+                          // new garden: setOptions({ seed })
 garden.destroy()          // Clean up and remove canvas
 ```
 
 ### Events
 
-Constructor callbacks and a subscription API are equivalent; both are fed by
-the same lifecycle points (`generationComplete` fires once per boundary, in
-order, even when several elapse in one frame):
+There are two ways to observe the garden. The `events` option takes four
+constructor callbacks; `on()`/`once()`/`off()` subscribe at any time and
+cover nine events (a superset). Both fire at the same lifecycle points.
+`generationComplete` for generation `g` fires once every plant in
+generations 1 to `g` has finished growing (end times from
+`getGenerationEndTimes()`, so it follows the timing curve), once per
+generation, in order, even when several finish in one frame; `seek()` fires
+none:
 
 ```typescript
 events: {
@@ -568,6 +594,15 @@ src/
 ## Canvas Background
 
 The canvas is transparent by default (`clearRect` each frame), so the page
-shows through — the `background` option fills a solid color instead. Resize
+shows through — the `background` option fills a solid color instead.
+
+With `fadeHeight > 0`, the top `fadeHeight` (fraction of container height)
+of the plant area, measured down from the `maxHeight` line, is blended
+toward `fadeColor` with a `source-atop` gradient: fully `fadeColor` at the
+`maxHeight` line, no effect at the bottom of the zone. `source-atop` tints
+only pixels already drawn, so a transparent canvas stays transparent. A
+fully transparent `fadeColor` (e.g. `'transparent'`) erases toward
+transparent instead. `maxHeight` caps drawn height: the generator clamps
+each plant's height so `height × heightMultiplier` never exceeds it. Resize
 wipes a canvas bitmap by spec, so the renderer retains the last
 `(plants, time)` and repaints after every (debounced) resize.
