@@ -5,6 +5,9 @@ import { Color } from './Color';
 import { ANIMATION, COLORS } from './constants';
 import { GrowthProgressPool } from './GrowthProgressPool';
 
+/** CSS hex color: #rgb, #rrggbb or #rrggbbaa */
+const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
 /**
  * Handles canvas setup, resizing, and rendering
  */
@@ -175,7 +178,9 @@ export class Renderer {
    * fillStyle across two different sentinels means the color was rejected.
    */
   private parseFadeColor(color: string): { r: number; g: number; b: number; a: number } | null {
-    const hex = Color.fromHex(color);
+    // Only well-formed CSS hex: Color.fromHex is lenient ('abc' without '#'
+    // parses as #aabbcc), and a canvas would reject such a string
+    const hex = HEX_COLOR.test(color) ? Color.fromHex(color) : null;
     if (hex) return { r: hex.r, g: hex.g, b: hex.b, a: hex.a };
 
     const ctx = this.ctx;

@@ -27,8 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fully at the `maxHeight` line and not at all at the bottom of the zone.
   Only drawn pixels are tinted, so a transparent canvas stays transparent.
   `fadeColor` accepts any CSS color, and a fully transparent one
-  (`'transparent'`) fades plants out to transparent instead. An unparseable
-  `fadeColor` logs one warning and disables the fade. Previously the zone
+  (`'transparent'`) fades plants out to transparent instead. Anything a
+  browser would not accept as a color (including hex without `#`, such as
+  `'abc'`) logs one warning and disables the fade. Previously the zone
   sat *above* the `maxHeight` line (so it only touched plant tops that
   overshot it), `fadeColor` was ignored (the fade erased to transparent),
   non-hex colors disabled it, and with an opaque `background` it cut a
