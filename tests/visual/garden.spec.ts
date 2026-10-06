@@ -10,7 +10,7 @@
  *  - golden screenshots: change detection for everything else
  *
  * Goldens are generated on Linux Chromium (CI platform); regenerate with
- * `npm run test:visual -- --update-snapshots`.
+ * `npm run build && npm run test:visual -- --update-snapshots`.
  */
 
 import { test, expect, type Page } from '@playwright/test';
@@ -157,4 +157,49 @@ test('resize while idle re-renders the frame (real ResizeObserver)', async ({ pa
   const after = await readStats(page);
   expect(after.width).toBe(640);
   expect(after.painted.bottom).toBeGreaterThan(4000);
+});
+
+test('fade blends plant tops into fadeColor and leaves the background transparent', async ({
+  page,
+}) => {
+  // Cyan appears in no natural-palette plant, so exact-cyan pixels can only
+  // come from the fade
+  await makeGarden(
+    page,
+    { maxHeight: 0.6, density: 'dense', fadeHeight: 0.2, fadeColor: 'cyan' },
+    100
+  );
+  const bands = await page.evaluate(() => {
+    const canvas = document.querySelector('#garden canvas') as HTMLCanvasElement;
+    const { width, height } = canvas;
+    const data = canvas.getContext('2d')!.getImageData(0, 0, width, height).data;
+    const line = Math.round(height * (1 - 0.6)); // maxHeight line
+    const zoneEnd = line + Math.round(height * 0.2);
+    const count = (y0: number, y1: number) => {
+      let painted = 0;
+      let cyan = 0;
+      for (let y = y0; y < y1; y++) {
+        for (let x = 0; x < width; x++) {
+          const i = (y * width + x) * 4;
+          if (data[i + 3] === 0) continue;
+          painted++;
+          if (data[i] < 40 && data[i + 1] > 215 && data[i + 2] > 215) cyan++;
+        }
+      }
+      return { painted, cyan };
+    };
+    return {
+      topLeftAlpha: data[3],
+      nearLine: count(line, line + Math.round(height * 0.02)),
+      belowZone: count(zoneEnd, height),
+    };
+  });
+
+  expect(bands.topLeftAlpha).toBe(0); // transparent canvas stays transparent
+  // Just under the maxHeight line the fade is near full strength
+  expect(bands.nearLine.painted).toBeGreaterThan(50);
+  expect(bands.nearLine.cyan / bands.nearLine.painted).toBeGreaterThan(0.8);
+  // Below the zone plants keep their own colors
+  expect(bands.belowZone.painted).toBeGreaterThan(5000);
+  expect(bands.belowZone.cyan).toBe(0);
 });

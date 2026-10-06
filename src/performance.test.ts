@@ -80,19 +80,16 @@ describe('Performance: Vec2 operations', () => {
 });
 
 describe('Performance: MutableVec2 vs Vec2', () => {
-  const ITERATIONS = 50000;
-
-  it('MutableVec2 addMut should be faster than Vec2 add', () => {
-    const immutable = new Vec2(10, 20);
+  // The point of MutableVec2 is avoiding allocation, which is deterministic
+  // to check; a wall-clock ratio against Vec2.add was not
+  it('MutableVec2 addMut updates in place instead of allocating', () => {
     const mutable = new MutableVec2(10, 20);
-    const other = { x: 5, y: 5 };
+    const result = mutable.addMut({ x: 5, y: 5 });
+    expect(result).toBe(mutable);
+    expect([mutable.x, mutable.y]).toEqual([15, 25]);
 
-    const immutableTime = measureTimeMs(() => immutable.add(other), ITERATIONS);
-    const mutableTime = measureTimeMs(() => mutable.addMut(other), ITERATIONS);
-
-    // Mutable should be at least as fast (no allocations)
-    // Using a generous factor since JIT optimization can vary
-    expect(mutableTime).toBeLessThan(immutableTime * 2);
+    const immutable = new Vec2(10, 20);
+    expect(immutable.add({ x: 5, y: 5 })).not.toBe(immutable);
   });
 
   it('should perform 100k MutableVec2 updates in under 500ms', () => {
