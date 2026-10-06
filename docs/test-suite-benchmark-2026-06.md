@@ -162,8 +162,8 @@ schedule produced this identical score 16 times (2026-06-15 to 2026-09-28)
 on unchanged `main` and led to no follow-up commit, so the schedule was
 removed and the job is on demand only. Local runs are not comparable: on a
 loaded machine instrumented tests time out, and Stryker counts timeouts as
-detected (a 2026-09 local run with 23 timeouts scored 75.75%). `break`
-stays `null` until like-for-like CI history exists.
+detected (a 2026-09 local run with 23 timeouts scored 75.75%). Stryker is
+used as an occasional audit, not a gate, so `break` stays `null`.
 
 The defect-reintroduction probes (section 1) remain the fast, curated
 complement: they encode real shipped bugs; Stryker covers the synthetic

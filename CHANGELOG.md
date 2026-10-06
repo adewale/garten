@@ -71,8 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code, tests, probes or test configs
 - Mutation testing is now on demand only (`workflow_dispatch` on `ci.yml`);
   the weekly scheduled run listed under 1.1.0 was removed after re-scoring
-  unchanged `main` with the same result every week. Stryker's `break`
-  threshold is unset until CI gives a like-for-like baseline
+  unchanged `main` with the same result every week. Stryker is now an
+  occasional audit tool rather than a gate, so its `break` threshold stays
+  unset; the defect probes are the per-change gate
 - Category-registry tests: every `PlantType` is grown through exactly one
   public category filter, and each category name grows the plant it is
   named for

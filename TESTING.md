@@ -184,11 +184,17 @@ The suite's strength is verified, not assumed:
   scheduled or per commit: a full-`src` run is CPU-expensive, and a weekly
   schedule re-scored unchanged `main` (94f2c09) 16 times, 2026-06-15 to
   2026-09-28, with the same result every week (73.86% total / 79.12%
-  covered, ~10 min each) and no follow-up commit, so it was removed. Run it
-  after substantial suite or boundary changes. `break` in
-  `stryker.config.json` is `null`: there is no like-for-like CI history for
-  on-demand runs yet, and local runs on a loaded machine inflate the score
-  (Stryker counts timeouts as detected; a 2026-09 local run with 23
-  timeouts scored 75.75% against CI's 73.86% with 3–5). Set a `break` only
-  once CI runs give a like-for-like baseline; never lower it to get
-  green.
+  covered, ~10 min each) and no follow-up commit, so it was removed.
+  Stryker is an audit tool here, not a gate: run it when auditing or
+  rewriting a module's tests, ideally scoped to the files being changed,
+  and turn surviving mutants into assertions. `break` in
+  `stryker.config.json` stays `null` because no decision hangs on the
+  score (local runs on a loaded machine also inflate it: Stryker counts
+  timeouts as detected; a 2026-09 local run with 23 timeouts scored 75.75%
+  against CI's 73.86% with 3–5). The per-change guarantees come from the
+  defect probes and from planting each new test's bug before trusting it.
+- Property tests and fuzzing cover inputs, not oracles: a property such as
+  "monotone and bounded" passed the inverted timing curves unchanged.
+  Prefer properties that pin the right answer (inverses, comparison with a
+  simple reference, exact fallback values), and check each one fails on a
+  planted bug.
