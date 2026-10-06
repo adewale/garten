@@ -1,15 +1,18 @@
 /**
- * Regression tests for memory-related code paths
- * Verifies behavior before and after memory optimizations
+ * Regression tests for the allocation-free code paths (memory optimizations):
+ * shared result objects and the growth-progress pool's bookkeeping.
+ * These assert reuse and accounting, not heap measurements. drawStem's
+ * geometry is covered in plants/renderers.test.ts; RNG determinism in
+ * SeededRandom.test.ts.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { drawStem } from './plants/renderers';
 import { GrowthProgressPool } from './GrowthProgressPool';
-import { createRandom, seededRandom } from './SeededRandom';
+import { Color } from './Color';
 
-// ==================== drawStem TESTS ====================
+// ==================== drawStem SHARED RESULT ====================
 
-describe('drawStem return value', () => {
+describe('drawStem shared result object (no per-call allocation)', () => {
   let ctx: CanvasRenderingContext2D;
 
   beforeEach(() => {
@@ -24,43 +27,7 @@ describe('drawStem return value', () => {
     } as unknown as CanvasRenderingContext2D;
   });
 
-  it('returns null when growth is 0', () => {
-    expect(drawStem(ctx, 100, 200, 50, 2, '#333', 0.1, 0)).toBeNull();
-  });
-
-  it('returns null when growth is negative', () => {
-    expect(drawStem(ctx, 100, 200, 50, 2, '#333', 0.1, -0.5)).toBeNull();
-  });
-
-  it('returns end position at full growth', () => {
-    const result = drawStem(ctx, 100, 300, 100, 2, '#333', 0.1, 1);
-    expect(result).not.toBeNull();
-    // With lean=0.1, height=100: endX = 100 + 0.1*100 = 110, endY = 300 - 100 = 200
-    expect(result!.x).toBeCloseTo(110, 1);
-    expect(result!.y).toBeCloseTo(200, 1);
-  });
-
-  it('returns correct end position at partial growth', () => {
-    const result = drawStem(ctx, 100, 300, 100, 2, '#333', 0, 0.5);
-    expect(result).not.toBeNull();
-    // With lean=0, h=50: endX = 100, endY = 300 - 50 = 250
-    expect(result!.x).toBeCloseTo(100, 1);
-    expect(result!.y).toBeCloseTo(250, 1);
-  });
-
-  it('calls correct canvas methods', () => {
-    drawStem(ctx, 100, 300, 100, 2, '#4a7c40', 0.1, 1);
-    expect(ctx.beginPath).toHaveBeenCalled();
-    expect(ctx.moveTo).toHaveBeenCalledWith(100, 300);
-    expect(ctx.bezierCurveTo).toHaveBeenCalled();
-    expect(ctx.stroke).toHaveBeenCalled();
-    expect(ctx.strokeStyle).toBe('#4a7c40');
-    expect(ctx.lineWidth).toBe(2);
-    expect(ctx.lineCap).toBe('round');
-  });
-
-  it('consecutive calls return correct values when consumed immediately', () => {
-    // drawStem returns a shared object — values must be consumed before next call
+  it('returns the same instance on every call, with correct values when consumed immediately', () => {
     const r1 = drawStem(ctx, 50, 200, 80, 2, '#333', 0.2, 1);
     expect(r1).not.toBeNull();
     // r1: endX = 50 + 0.2*80 = 66, endY = 200 - 80 = 120
@@ -69,51 +36,40 @@ describe('drawStem return value', () => {
     expect(r1y).toBeCloseTo(120, 1);
 
     const r2 = drawStem(ctx, 150, 200, 60, 2, '#333', -0.1, 1);
-    expect(r2).not.toBeNull();
+    // Reused, not reallocated: the caller must copy values before the next call
+    expect(r2).toBe(r1);
     // r2: endX = 150 + (-0.1)*60 = 144, endY = 200 - 60 = 140
     expect(r2!.x).toBeCloseTo(144, 1);
     expect(r2!.y).toBeCloseTo(140, 1);
   });
 });
 
-// ==================== createRandom DETERMINISM TESTS ====================
+// ==================== Color HEX CACHE ====================
 
-describe('createRandom determinism (used in tall plant renderers)', () => {
-  it('produces same sequence for same seed', () => {
-    const r1 = createRandom(42);
-    const r2 = createRandom(42);
-    const values1 = Array.from({ length: 30 }, () => r1());
-    const values2 = Array.from({ length: 30 }, () => r2());
-    expect(values1).toEqual(values2);
-  });
+describe('Color.toHex cache (no recomputation on repeat calls)', () => {
+  it('serves repeat toHex() calls from the cache without rebuilding the string', () => {
+    const c = new Color(100, 150, 200);
+    expect(c.toHex()).toBe('#6496c8');
 
-  it('produces different sequences for different seeds', () => {
-    const r1 = createRandom(42);
-    const r2 = createRandom(43);
-    const v1 = r1();
-    const v2 = r2();
-    expect(v1).not.toBe(v2);
-  });
+    // Building a hex string pads each channel; a cache hit must not
+    const padStart = vi.spyOn(String.prototype, 'padStart');
+    try {
+      expect(c.toHex()).toBe('#6496c8');
+      expect(c.toHex()).toBe('#6496c8');
+      expect(padStart).not.toHaveBeenCalled();
 
-  it('values are in [0, 1) range', () => {
-    const rand = createRandom(12345);
-    for (let i = 0; i < 100; i++) {
-      const v = rand();
-      expect(v).toBeGreaterThanOrEqual(0);
-      expect(v).toBeLessThan(1);
-    }
-  });
-
-  it('seededRandom is pure for same input', () => {
-    for (let seed = 0; seed < 100; seed++) {
-      expect(seededRandom(seed)).toBe(seededRandom(seed));
+      // The alpha form is not cached, which proves the spy can observe a rebuild
+      expect(c.toHex(true)).toBe('#6496c8ff');
+      expect(padStart).toHaveBeenCalled();
+    } finally {
+      padStart.mockRestore();
     }
   });
 });
 
 // ==================== GrowthProgressPool FRAME HISTORY TESTS ====================
 
-describe('GrowthProgressPool frame history', () => {
+describe('GrowthProgressPool frame-history bookkeeping', () => {
   let pool: GrowthProgressPool;
 
   beforeEach(() => {
@@ -171,7 +127,7 @@ describe('GrowthProgressPool frame history', () => {
 
 // ==================== GrowthProgressPool LIFECYCLE TESTS ====================
 
-describe('GrowthProgressPool destroy/reset', () => {
+describe('GrowthProgressPool reset', () => {
   it('reset brings pool back to initial state', () => {
     const pool = new GrowthProgressPool({ initialSize: 10, devMode: false });
 
@@ -209,9 +165,9 @@ describe('GrowthProgressPool destroy/reset', () => {
   });
 });
 
-// ==================== RENDER CONTEXT CONSISTENCY TESTS ====================
+// ==================== POOLED CALCULATION CONSISTENCY ====================
 
-describe('Flowering context calculations are consistent', () => {
+describe('Pooled growth calculation matches the formula', () => {
   it('growth phases from pool match manual calculation', () => {
     const pool = new GrowthProgressPool({ initialSize: 10, devMode: false });
 
@@ -222,26 +178,5 @@ describe('Flowering context calculations are consistent', () => {
     expect(fromPool.stem).toBeGreaterThan(0);
     expect(fromPool.flower).toBe(0); // flower starts at 0.5 progress, so (0.5 - 0.5)*2 = 0
     pool.endFrame();
-  });
-
-  it('x coordinate calculation: plant.x * width', () => {
-    // Verify that x = plant.x * width produces correct results
-    // for a variety of plant.x values [0, 1] and widths
-    const widths = [100, 800, 1920];
-    const xs = [0, 0.25, 0.5, 0.75, 1];
-    for (const w of widths) {
-      for (const px of xs) {
-        expect(px * w).toBeCloseTo(w * px);
-      }
-    }
-  });
-
-  it('plantHeight calculation uses variation heightMultiplier', () => {
-    // plantHeight = maxHeight * height * variation.heightMultiplier
-    const height = 600;
-    const maxHeight = 0.35;
-    const heightMultiplier = 1.3;
-    const result = maxHeight * height * heightMultiplier;
-    expect(result).toBeCloseTo(273, 0);
   });
 });

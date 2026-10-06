@@ -7,7 +7,7 @@
  * These tests make the relationships explicit and executable.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   OPTION_BOUNDS,
   PLANTS_PER_GENERATION,
@@ -22,7 +22,30 @@ import {
   PLANT_SEED_STRIDE,
   GEN_COUNT_SEED_OFFSET,
   MAX_RNG_DRAWS_PER_PLANT,
+  generatePlants,
 } from './plants/generator';
+import { resolveOptions } from './defaults';
+
+/**
+ * Draw counter: every stream handed out by createRandom() is wrapped so the
+ * number of draws consumed per seed can be measured, not assumed.
+ */
+const rngDraws = vi.hoisted(() => new Map<number, number>());
+
+vi.mock('./utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./utils')>();
+  return {
+    ...actual,
+    createRandom: (initialSeed: number) => {
+      const rand = actual.createRandom(initialSeed);
+      rngDraws.set(initialSeed, 0);
+      return () => {
+        rngDraws.set(initialSeed, (rngDraws.get(initialSeed) ?? 0) + 1);
+        return rand();
+      };
+    },
+  };
+});
 
 describe('Constraint: option bounds are well-formed', () => {
   it.each(Object.entries(OPTION_BOUNDS))('%s has min < max', (_key, bounds) => {
@@ -72,10 +95,43 @@ describe('Constraint: seed strides cannot collide', () => {
     expect(GEN_COUNT_SEED_OFFSET + MAX_RNG_DRAWS_PER_PLANT).toBeLessThan(GEN_SEED_STRIDE);
   });
 
-  it('plant stride exceeds the per-plant RNG draw count (no stream overlap)', () => {
-    // Each plant consumes ~12 sequential draws today; the stride must keep
-    // adjacent plants' streams disjoint with headroom for new fields
-    expect(PLANT_SEED_STRIDE).toBeGreaterThan(12);
+  it('measured per-plant RNG draws <= MAX_RNG_DRAWS_PER_PLANT <= PLANT_SEED_STRIDE', () => {
+    // createRandom(s) consumes seeds s, s+1, ... so a plant stream that draws
+    // more than PLANT_SEED_STRIDE values runs into its neighbor's stream.
+    // Measure the worst legal garden (lush, max generations, full height,
+    // every category) over several seeds rather than trusting a comment.
+    let maxPlantDraws = 0;
+    let maxGenCountDraws = 0;
+    let plantStreams = 0;
+    for (const seed of [1, 42, 4242]) {
+      rngDraws.clear();
+      const plants = generatePlants(
+        resolveOptions({
+          container: document.createElement('div'),
+          seed,
+          density: 'lush',
+          generations: OPTION_BOUNDS.GENERATIONS.max,
+          maxHeight: OPTION_BOUNDS.MAX_HEIGHT.max,
+        })
+      );
+      const plantSeeds = new Set(plants.map((p) => p.seed));
+      for (const [streamSeed, draws] of rngDraws) {
+        if (plantSeeds.has(streamSeed)) {
+          maxPlantDraws = Math.max(maxPlantDraws, draws);
+          plantStreams++;
+        } else {
+          maxGenCountDraws = Math.max(maxGenCountDraws, draws);
+        }
+      }
+      expect(plantSeeds.size).toBe(plants.length);
+    }
+
+    // The wrapper really observed the generator's streams
+    expect(plantStreams).toBeGreaterThan(1000);
+    expect(maxPlantDraws).toBeGreaterThan(0);
+    expect(maxPlantDraws).toBeLessThanOrEqual(MAX_RNG_DRAWS_PER_PLANT);
+    expect(maxGenCountDraws).toBeLessThanOrEqual(MAX_RNG_DRAWS_PER_PLANT);
+    expect(MAX_RNG_DRAWS_PER_PLANT).toBeLessThanOrEqual(PLANT_SEED_STRIDE);
   });
 
   it('worst legal garden stays within safe integer seed range', () => {

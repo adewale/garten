@@ -14,6 +14,10 @@ import { Color } from './Color';
 import { SeededRandom } from './SeededRandom';
 import { GrowthProgress } from './GrowthProgress';
 import { GrowthProgressPool, MutableGrowthProgress } from './GrowthProgressPool';
+import { generatePlants } from './plants/generator';
+import { drawPlant } from './plants/renderers';
+import { resolveOptions } from './defaults';
+import { OPTION_BOUNDS } from './constants';
 
 // Helper to measure operations per second
 function measureOpsPerSecond(fn: () => void, iterations: number = 10000): number {
@@ -39,37 +43,37 @@ describe('Performance: Vec2 operations', () => {
   const v1 = new Vec2(10, 20);
   const v2 = new Vec2(30, 40);
 
-  it('should perform 50k add operations in under 50ms', () => {
+  it('should perform 50k add operations in under 500ms', () => {
     const time = measureTimeMs(() => v1.add(v2), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k normalize operations in under 50ms', () => {
+  it('should perform 50k normalize operations in under 500ms', () => {
     const time = measureTimeMs(() => v1.normalize(), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k length operations in under 50ms', () => {
+  it('should perform 50k length operations in under 500ms', () => {
     const time = measureTimeMs(() => v1.length(), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k lerp operations in under 50ms', () => {
+  it('should perform 50k lerp operations in under 500ms', () => {
     const time = measureTimeMs(() => v1.lerp(v2, 0.5), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k rotate operations in under 50ms', () => {
+  it('should perform 50k rotate operations in under 500ms', () => {
     const time = measureTimeMs(() => v1.rotate(Math.PI / 4), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k fromPolar operations in under 50ms', () => {
+  it('should perform 50k fromPolar operations in under 500ms', () => {
     const time = measureTimeMs(() => Vec2.fromPolar(Math.PI / 4, 100), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k distance operations in under 50ms', () => {
+  it('should perform 50k distance operations in under 500ms', () => {
     const time = measureTimeMs(() => v1.distanceTo(v2), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
@@ -91,7 +95,7 @@ describe('Performance: MutableVec2 vs Vec2', () => {
     expect(mutableTime).toBeLessThan(immutableTime * 2);
   });
 
-  it('should perform 100k MutableVec2 updates in under 50ms', () => {
+  it('should perform 100k MutableVec2 updates in under 500ms', () => {
     const mv = new MutableVec2(0, 0);
     const time = measureTimeMs(() => {
       mv.set(10, 20);
@@ -106,57 +110,41 @@ describe('Performance: Color operations', () => {
   const ITERATIONS = 50000;
   const color = new Color(128, 128, 128);
 
-  it('should perform 50k color creations in under 50ms', () => {
+  it('should perform 50k color creations in under 500ms', () => {
     const time = measureTimeMs(() => new Color(128, 128, 128), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k toHex conversions in under 50ms', () => {
+  it('should perform 50k toHex conversions in under 500ms', () => {
     const time = measureTimeMs(() => color.toHex(), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k lighten operations in under 50ms', () => {
+  it('should perform 50k lighten operations in under 500ms', () => {
     const time = measureTimeMs(() => color.lighten(0.2), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k darken operations in under 50ms', () => {
+  it('should perform 50k darken operations in under 500ms', () => {
     const time = measureTimeMs(() => color.darken(0.2), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k mix operations in under 50ms', () => {
+  it('should perform 50k mix operations in under 500ms', () => {
     const other = new Color(255, 0, 0);
     const time = measureTimeMs(() => color.mix(other, 0.5), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 10k fromHSL operations in under 100ms', () => {
+  it('should perform 10k fromHSL operations in under 1000ms', () => {
     // HSL conversion is more expensive
     const time = measureTimeMs(() => Color.fromHSL(180, 50, 50), 10000);
     expect(time).toBeLessThan(1000);
   });
 
-  it('should perform 10k toHSL operations in under 100ms', () => {
+  it('should perform 10k toHSL operations in under 1000ms', () => {
     const time = measureTimeMs(() => color.toHSL(), 10000);
     expect(time).toBeLessThan(1000);
-  });
-
-  it('should benefit from hex cache', () => {
-    const c = new Color(100, 150, 200);
-
-    // First call populates cache
-    c.toHex();
-
-    // Measure cached calls
-    const cachedTime = measureTimeMs(() => c.toHex(), 50000);
-
-    // Measure uncached calls (new color each time)
-    const uncachedTime = measureTimeMs(() => new Color(100, 150, 200).toHex(), 50000);
-
-    // Cached should be faster
-    expect(cachedTime).toBeLessThan(uncachedTime);
   });
 });
 
@@ -164,39 +152,39 @@ describe('Performance: SeededRandom operations', () => {
   const ITERATIONS = 100000;
   const rng = new SeededRandom(12345);
 
-  it('should perform 100k next() calls in under 50ms', () => {
+  it('should perform 100k next() calls in under 500ms', () => {
     const time = measureTimeMs(() => rng.next(), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 100k range() calls in under 50ms', () => {
+  it('should perform 100k range() calls in under 500ms', () => {
     const time = measureTimeMs(() => rng.range(0, 100), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 100k int() calls in under 50ms', () => {
+  it('should perform 100k int() calls in under 500ms', () => {
     const time = measureTimeMs(() => rng.int(0, 100), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 100k bool() calls in under 50ms', () => {
+  it('should perform 100k bool() calls in under 500ms', () => {
     const time = measureTimeMs(() => rng.bool(), ITERATIONS);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k pick() calls in under 50ms', () => {
+  it('should perform 50k pick() calls in under 500ms', () => {
     const arr = [1, 2, 3, 4, 5];
     const time = measureTimeMs(() => rng.pick(arr), 50000);
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 10k gaussian() calls in under 100ms', () => {
+  it('should perform 10k gaussian() calls in under 1000ms', () => {
     // Gaussian uses Box-Muller which is more expensive
     const time = measureTimeMs(() => rng.gaussian(0, 1), 10000);
     expect(time).toBeLessThan(1000);
   });
 
-  it('should perform 50k pointInCircle() calls in under 50ms', () => {
+  it('should perform 50k pointInCircle() calls in under 500ms', () => {
     const time = measureTimeMs(() => rng.pointInCircle(), 50000);
     expect(time).toBeLessThan(500);
   });
@@ -205,7 +193,7 @@ describe('Performance: SeededRandom operations', () => {
 describe('Performance: GrowthProgress calculations', () => {
   const ITERATIONS = 50000;
 
-  it('should perform 50k calculate() calls in under 50ms', () => {
+  it('should perform 50k calculate() calls in under 500ms', () => {
     const time = measureTimeMs(
       () => GrowthProgress.calculate(500, 100, 1000),
       ITERATIONS
@@ -213,7 +201,7 @@ describe('Performance: GrowthProgress calculations', () => {
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k fromProgress() calls in under 50ms', () => {
+  it('should perform 50k fromProgress() calls in under 500ms', () => {
     const time = measureTimeMs(
       () => GrowthProgress.fromProgress(0.5),
       ITERATIONS
@@ -221,7 +209,7 @@ describe('Performance: GrowthProgress calculations', () => {
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 100k property accesses in under 50ms', () => {
+  it('should perform 100k property accesses in under 500ms', () => {
     const growth = GrowthProgress.fromProgress(0.5);
     const time = measureTimeMs(() => {
       growth.stem;
@@ -232,83 +220,60 @@ describe('Performance: GrowthProgress calculations', () => {
     expect(time).toBeLessThan(500);
   });
 
-  it('should perform 50k easing calculations in under 50ms', () => {
+  it('should perform 50k easing calculations in under 500ms', () => {
     const growth = GrowthProgress.fromProgress(0.5);
     const time = measureTimeMs(() => growth.eased('ease-out'), 50000);
     expect(time).toBeLessThan(500);
   });
 });
 
-describe('Performance: Simulated render loop', () => {
-  it('should handle 1000 plants per frame under 16ms', () => {
-    const rng = new SeededRandom(42);
-
-    // Pre-generate plant data
-    const plants = Array.from({ length: 1000 }, () => ({
-      position: new Vec2(rng.range(0, 800), rng.range(0, 600)),
-      delay: rng.range(0, 2000),
-      duration: rng.range(1000, 3000),
-      height: rng.range(30, 80),
-      color: Color.fromHSL(rng.range(0, 360), rng.range(50, 100), rng.range(40, 60)),
-    }));
-
-    // Simulate one frame at time=1000
-    const time = 1000;
+describe('Performance: real generate + render path', () => {
+  it('worst legal garden generates and draws one mid-growth frame in under 2500ms', () => {
+    // Canary over the real hot path, not a simulation of it: the densest
+    // legal configuration through generatePlants(), then drawPlant() for
+    // every plant at mid-growth on a no-op context (so only library code is
+    // timed). Measured ~150-220ms cold on a dev container (2026-10);
+    // the budget carries >10x headroom.
     const start = performance.now();
+    const plants = generatePlants(
+      resolveOptions({
+        container: document.createElement('div'),
+        seed: 42,
+        density: 'lush',
+        generations: OPTION_BOUNDS.GENERATIONS.max,
+        maxHeight: OPTION_BOUNDS.MAX_HEIGHT.max,
+      })
+    );
 
-    let renderedCount = 0;
+    const noop = () => {};
+    const ctx = { createLinearGradient: () => ({ addColorStop: noop }) } as Record<string, unknown>;
+    for (const method of [
+      'beginPath', 'closePath', 'moveTo', 'lineTo', 'bezierCurveTo', 'quadraticCurveTo',
+      'arc', 'ellipse', 'rect', 'fill', 'stroke', 'fillRect', 'clearRect',
+      'save', 'restore', 'translate', 'rotate', 'scale', 'setTransform',
+    ]) {
+      ctx[method] = noop;
+    }
+
+    const pool = new GrowthProgressPool({ devMode: false });
+    pool.beginFrame();
     for (const plant of plants) {
-      const growth = GrowthProgress.calculate(time, plant.delay, plant.duration);
-
-      if (growth.isActive) {
-        // Simulate stem position calculation
-        const stemTop = plant.position.subtract(new Vec2(0, plant.height * growth.stem));
-
-        // Simulate color variation
-        const colorLightness = plant.color.lighten(0.1 * (1 - growth.progress)).luminance();
-
-        // Simulate leaf position (if has leaves)
-        if (growth.hasLeaves) {
-          const leafDist = stemTop.add(Vec2.fromPolar(-Math.PI / 4, 10 * growth.leaf)).length();
-          renderedCount += leafDist > 0 ? 1 : 0;
-        }
-        renderedCount += colorLightness > 0 ? 1 : 0;
-      }
+      drawPlant(
+        ctx as unknown as CanvasRenderingContext2D,
+        plant,
+        1920,
+        1080,
+        plant.delay + plant.growDuration * 0.5,
+        pool
+      );
     }
-    // Use rendered count to prevent dead code elimination
-    expect(renderedCount).toBeGreaterThan(0);
-
+    pool.endFrame();
     const elapsed = performance.now() - start;
 
-    // Should complete in under 16ms for 60fps
-    expect(elapsed).toBeLessThan(160);
-  });
-
-  it('should handle plant generation for 500 plants under 10ms', () => {
-    const start = performance.now();
-
-    const rng = new SeededRandom(42);
-    const plants = [];
-
-    for (let i = 0; i < 500; i++) {
-      plants.push({
-        id: i,
-        position: new Vec2(rng.range(0, 800), rng.range(0, 600)),
-        delay: rng.range(0, 2000),
-        duration: rng.range(1000, 3000),
-        height: rng.range(30, 80),
-        color: Color.fromHSL(rng.range(0, 360), rng.range(50, 100), rng.range(40, 60)),
-        variation: {
-          lean: rng.centered(0.2),
-          thickness: rng.range(0.8, 1.2),
-          petals: rng.int(4, 8),
-        },
-      });
-    }
-
-    const elapsed = performance.now() - start;
-    expect(elapsed).toBeLessThan(100);
-    expect(plants.length).toBe(500);
+    // Guard against a vacuous canary (e.g. generation silently capped)
+    expect(plants.length).toBeGreaterThan(OPTION_BOUNDS.GENERATIONS.max * 10);
+    expect(pool.getStats().acquired).toBeGreaterThan(0);
+    expect(elapsed).toBeLessThan(2500);
   });
 });
 
@@ -349,19 +314,19 @@ describe('Performance: Memory-conscious patterns', () => {
 });
 
 describe('Performance: Throughput baselines', () => {
-  it('Vec2 should achieve > 1M ops/sec for add', () => {
+  it('Vec2 should achieve > 100k ops/sec for add', () => {
     const v1 = new Vec2(10, 20);
     const v2 = new Vec2(30, 40);
     const ops = measureOpsPerSecond(() => v1.add(v2), 100000);
     expect(ops).toBeGreaterThan(100000);
   });
 
-  it('Color should achieve > 1M ops/sec for creation', () => {
+  it('Color should achieve > 100k ops/sec for creation', () => {
     const ops = measureOpsPerSecond(() => new Color(128, 128, 128), 100000);
     expect(ops).toBeGreaterThan(100000);
   });
 
-  it('SeededRandom should achieve > 5M ops/sec for next()', () => {
+  it('SeededRandom should achieve > 500k ops/sec for next()', () => {
     const rng = new SeededRandom(42);
     const ops = measureOpsPerSecond(() => rng.next(), 100000);
     expect(ops).toBeGreaterThan(500000);
@@ -379,53 +344,7 @@ describe('Performance: Throughput baselines', () => {
 // ==================== GROWTHPROGRESSPOOL PERFORMANCE ====================
 
 describe('Performance: GrowthProgressPool', () => {
-  it('pool should be faster than creating new objects', () => {
-    const ITERATIONS = 10000;
-    // Pre-sized pool to avoid growth overhead during timing
-    const pool = new GrowthProgressPool({ devMode: false, initialSize: ITERATIONS, maxSize: 65536 });
-
-    // Warm up JIT with a few frames
-    for (let w = 0; w < 3; w++) {
-      pool.beginFrame();
-      for (let i = 0; i < 1000; i++) {
-        pool.acquireAndCalculate(i, 0, 1000);
-      }
-      pool.endFrame();
-    }
-
-    // Multiple measurement runs to get median
-    const poolTimes: number[] = [];
-    const allocTimes: number[] = [];
-
-    for (let run = 0; run < 5; run++) {
-      // Measure pool approach
-      pool.beginFrame();
-      const poolStart = performance.now();
-      for (let i = 0; i < ITERATIONS; i++) {
-        pool.acquireAndCalculate(i, 0, 1000);
-      }
-      poolTimes.push(performance.now() - poolStart);
-      pool.endFrame();
-
-      // Measure allocation approach
-      const allocStart = performance.now();
-      for (let i = 0; i < ITERATIONS; i++) {
-        GrowthProgress.calculate(i, 0, 1000);
-      }
-      allocTimes.push(performance.now() - allocStart);
-    }
-
-    // Compare medians for more stable results
-    const medianPool = poolTimes.sort((a, b) => a - b)[2];
-    const medianAlloc = allocTimes.sort((a, b) => a - b)[2];
-
-    // Pool should be competitive with allocation
-    // The real benefit is reduced GC pressure over sustained usage
-    // Allow generous margin due to JIT variance
-    expect(medianPool).toBeLessThan(medianAlloc * 3);
-  });
-
-  it('should perform 50k acquireAndCalculate in under 50ms', () => {
+  it('should perform 50k acquireAndCalculate in under 500ms', () => {
     const pool = new GrowthProgressPool({ devMode: false, initialSize: 2048, maxSize: 65536 });
     const ITERATIONS = 50000;
 
@@ -440,7 +359,7 @@ describe('Performance: GrowthProgressPool', () => {
     expect(elapsed).toBeLessThan(500);
   });
 
-  it('beginFrame/endFrame should have minimal overhead', () => {
+  it('should perform 10k beginFrame/endFrame cycles in under 500ms', () => {
     const pool = new GrowthProgressPool({ devMode: false });
     const ITERATIONS = 10000;
 
@@ -451,11 +370,11 @@ describe('Performance: GrowthProgressPool', () => {
     }
     const elapsed = performance.now() - start;
 
-    // 10k frame cycles should complete in under 50ms
+    // 10k frame cycles should complete in under 500ms
     expect(elapsed).toBeLessThan(500);
   });
 
-  it('should handle 1000 plants per frame under 16ms', () => {
+  it('should handle 1000 plants per frame under 160ms', () => {
     const pool = new GrowthProgressPool({ devMode: false });
     const numPlants = 1000;
 
@@ -483,7 +402,7 @@ describe('Performance: GrowthProgressPool', () => {
     const elapsed = performance.now() - start;
     pool.endFrame();
 
-    // Should complete in under 16ms for 60fps
+    // 10x headroom over the 16ms 60fps frame budget
     expect(elapsed).toBeLessThan(160);
   });
 
@@ -505,16 +424,17 @@ describe('Performance: GrowthProgressPool', () => {
     expect(stats.poolSize).toBe(1024);
   });
 
-  it('MutableGrowthProgress.calculateMut should achieve > 2M ops/sec', () => {
+  it('MutableGrowthProgress.calculateMut should achieve > 1M ops/sec', () => {
     const obj = new MutableGrowthProgress();
     const ops = measureOpsPerSecond(
       () => obj.calculateMut(500, 100, 1000),
       100000
     );
-    expect(ops).toBeGreaterThan(2000000);
+    // Measured 11-29M ops/sec on a dev container (2026-10); 10x headroom
+    expect(ops).toBeGreaterThan(1000000);
   });
 
-  it('pool.acquire should achieve > 5M ops/sec', () => {
+  it('pool.acquire should achieve > 500k ops/sec', () => {
     const pool = new GrowthProgressPool({ devMode: false, initialSize: 100000 });
     pool.beginFrame();
     const ops = measureOpsPerSecond(() => pool.acquire(), 100000);

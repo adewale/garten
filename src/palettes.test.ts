@@ -10,12 +10,26 @@ import {
 } from './palettes';
 import type { ColorPalette } from './types';
 
+const ALL_PALETTES: ColorPalette[] = ['natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone'];
+const STANDARD_PALETTES: ColorPalette[] = ['natural', 'warm', 'cool', 'grayscale', 'vibrant'];
+
+function rgb(hex: string): [number, number, number] {
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
+}
+
+/** Rec. 601 luma, enough to order tints and shades of one hue */
+function luma(hex: string): number {
+  const [r, g, b] = rgb(hex);
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
 describe('flowerPalettes', () => {
-  it('should have all expected palettes', () => {
-    const expectedPalettes: ColorPalette[] = ['natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone'];
-    for (const palette of expectedPalettes) {
-      expect(flowerPalettes[palette]).toBeDefined();
-      expect(Array.isArray(flowerPalettes[palette])).toBe(true);
+  it('should have exactly the expected palettes, each standard one non-empty', () => {
+    expect(Object.keys(flowerPalettes).sort()).toEqual([...ALL_PALETTES].sort());
+    for (const palette of STANDARD_PALETTES) {
+      expect(flowerPalettes[palette].length, palette).toBeGreaterThanOrEqual(3);
+      // Duplicates would silently skew the color weighting
+      expect(new Set(flowerPalettes[palette]).size, palette).toBe(flowerPalettes[palette].length);
     }
   });
 
@@ -47,12 +61,12 @@ describe('flowerPalettes', () => {
 });
 
 describe('foliagePalettes', () => {
-  it('should have all expected palettes', () => {
-    const expectedPalettes: ColorPalette[] = ['natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone'];
-    for (const palette of expectedPalettes) {
-      expect(foliagePalettes[palette]).toBeDefined();
-      expect(foliagePalettes[palette].leaves).toBeDefined();
-      expect(foliagePalettes[palette].stems).toBeDefined();
+  it('should have exactly the expected palettes, each standard one with leaves and stems', () => {
+    expect(Object.keys(foliagePalettes).sort()).toEqual([...ALL_PALETTES].sort());
+    for (const palette of STANDARD_PALETTES) {
+      expect(Object.keys(foliagePalettes[palette]).sort(), palette).toEqual(['leaves', 'stems']);
+      expect(foliagePalettes[palette].leaves.length, palette).toBeGreaterThan(0);
+      expect(foliagePalettes[palette].stems.length, palette).toBeGreaterThan(0);
     }
   });
 
@@ -66,6 +80,14 @@ describe('foliagePalettes', () => {
       for (const color of foliagePalettes[palette].stems) {
         expect(color).toMatch(hexPattern);
       }
+    }
+  });
+
+  it('should have grayscale leaves and stems that are achromatic', () => {
+    for (const color of [...foliagePalettes.grayscale.leaves, ...foliagePalettes.grayscale.stems]) {
+      const [r, g, b] = rgb(color);
+      expect(r, color).toBe(g);
+      expect(g, color).toBe(b);
     }
   });
 
@@ -116,20 +138,28 @@ describe('generateMonotoneFlowerColors', () => {
     const colors = generateMonotoneFlowerColors(accent);
     const accentIndex = colors.indexOf(accent);
 
-    // Colors before accent should be lighter (higher hex values)
-    // Colors after accent should be darker (lower hex values)
     expect(accentIndex).toBeGreaterThan(0);
     expect(accentIndex).toBeLessThan(colors.length - 1);
+    // Ordered from lightest tint to darkest shade
+    for (let i = 1; i < colors.length; i++) {
+      expect(luma(colors[i]), `${colors[i - 1]} -> ${colors[i]}`).toBeLessThan(luma(colors[i - 1]));
+    }
   });
 });
 
 describe('generateMonotoneFoliageColors', () => {
-  it('should return leaves and stems arrays', () => {
-    const foliage = generateMonotoneFoliageColors('#F6821F');
-    expect(foliage.leaves).toBeDefined();
-    expect(foliage.stems).toBeDefined();
-    expect(Array.isArray(foliage.leaves)).toBe(true);
-    expect(Array.isArray(foliage.stems)).toBe(true);
+  it('should derive every leaf and stem from the accent hue (darker shades)', () => {
+    const accent = '#F6821F';
+    const foliage = generateMonotoneFoliageColors(accent);
+    const accentLuma = luma(accent);
+    for (const color of [...foliage.leaves, ...foliage.stems]) {
+      expect(color).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      expect(luma(color), color).toBeLessThan(accentLuma);
+      // Pure darkening keeps the channel ordering of the accent (R > G > B)
+      const [r, g, b] = rgb(color);
+      expect(r, color).toBeGreaterThan(g);
+      expect(g, color).toBeGreaterThan(b);
+    }
   });
 
   it('should generate 5 leaf colors and 4 stem colors', () => {
@@ -316,6 +346,17 @@ describe('buildFoliageColors - grayscale', () => {
   it('should return grayscale foliage', () => {
     const result = buildFoliageColors(baseOptions);
     expect(result).toEqual(foliagePalettes.grayscale);
+  });
+
+  it('should produce truly achromatic foliage', () => {
+    const result = buildFoliageColors(baseOptions);
+    expect(result.leaves.length).toBeGreaterThan(0);
+    expect(result.stems.length).toBeGreaterThan(0);
+    for (const color of [...result.leaves, ...result.stems]) {
+      const [r, g, b] = rgb(color);
+      expect(r, color).toBe(g);
+      expect(g, color).toBe(b);
+    }
   });
 
   it('should ignore accent', () => {

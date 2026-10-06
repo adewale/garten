@@ -148,7 +148,11 @@ test('resize while idle re-renders the frame (real ResizeObserver)', async ({ pa
   await page.evaluate(() => {
     (document.querySelector('#garden') as HTMLElement).style.width = '640px';
   });
-  await page.waitForTimeout(400); // 100ms debounce + headroom
+  // Wait for the debounced resize itself (it resizes and repaints in one
+  // task), rather than sleeping for a guessed debounce + headroom
+  await page.waitForFunction(
+    () => (document.querySelector('#garden canvas') as HTMLCanvasElement | null)?.width === 640
+  );
 
   const after = await readStats(page);
   expect(after.width).toBe(640);

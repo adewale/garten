@@ -14,6 +14,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { drawStem, drawLeaf, drawPlant } from './renderers';
 import { PlantType } from '../types';
 import type { PlantData } from '../types';
+import { getPlantVariation } from './variations';
+import { seededRandom } from '../utils';
 import { GrowthProgressPool } from '../GrowthProgressPool';
 
 // Mock canvas context
@@ -261,57 +263,116 @@ describe('Stem position calculations', () => {
 });
 
 describe('Negative modifier guards', () => {
-  // These tests verify that plant rendering handles extreme negative modifiers
-  // without producing zero or negative counts (fixes issue #1)
+  // Count formulas are clamped with Math.max(min, base + petalCountModifier)
+  // so extreme negative modifiers still draw the minimum (fixes issue #1).
+  // Each case renders a real plant through drawPlant at full growth: with
+  // the guard in place, an extreme modifier (-100) must draw exactly what the
+  // modifier that lands *on* the minimum draws. Without the guard the
+  // extreme render loses those petals/leaves entirely and the streams differ.
 
-  it('should guard against extreme negative petalCountModifier', () => {
-    // All these formulas should produce at least the minimum value
-    // even with an extreme negative modifier like -10
+  /** Records every call as `method(args)` and flags non-finite or negative-radius args */
+  function createOpRecorder() {
+    const ops: string[] = [];
+    const problems: string[] = [];
+    const record =
+      (method: string, radiusIndexes: number[] = []) =>
+      (...args: unknown[]) => {
+        const nums = args.filter((a): a is number => typeof a === 'number');
+        if (nums.some((n) => !Number.isFinite(n))) problems.push(`${method}(${nums.join(',')})`);
+        for (const idx of radiusIndexes) {
+          if ((args[idx] as number) < 0) problems.push(`${method} negative radius ${String(args[idx])}`);
+        }
+        ops.push(`${method}(${nums.map((n) => n.toFixed(2)).join(',')})`);
+      };
+    const ctx = {
+      beginPath: record('beginPath'),
+      closePath: record('closePath'),
+      moveTo: record('moveTo'),
+      lineTo: record('lineTo'),
+      bezierCurveTo: record('bezierCurveTo'),
+      quadraticCurveTo: record('quadraticCurveTo'),
+      arc: record('arc', [2]),
+      ellipse: record('ellipse', [2, 3]),
+      rect: record('rect'),
+      fill: record('fill'),
+      stroke: record('stroke'),
+      fillRect: record('fillRect'),
+      save: record('save'),
+      restore: record('restore'),
+      translate: record('translate'),
+      rotate: record('rotate'),
+      scale: record('scale'),
+      createLinearGradient: () => ({ addColorStop: () => {} }),
+      strokeStyle: '',
+      fillStyle: '',
+      lineWidth: 1,
+      lineCap: 'butt' as CanvasLineCap,
+      globalAlpha: 1,
+    } as unknown as CanvasRenderingContext2D;
+    return { ctx, ops, problems };
+  }
 
-    // Succulent: leavesPerLayer = Math.max(3, 6 + petalCountModifier)
-    const succulentLeaves = Math.max(3, 6 + (-10));
-    expect(succulentLeaves).toBe(3);
-    expect(succulentLeaves).toBeGreaterThanOrEqual(1);
+  function render(type: PlantType, petalCountModifier: number) {
+    const base = makeGuardPlant(type);
+    const plant = {
+      ...base,
+      variation: { ...getPlantVariation(type), complexity: 0.8, petalCountModifier },
+    };
+    const { ctx, ops, problems } = createOpRecorder();
+    const pool = new GrowthProgressPool({ devMode: true });
+    pool.beginFrame();
+    drawPlant(ctx, plant, 800, 600, 1, pool);
+    pool.endFrame();
+    return { ops, problems };
+  }
 
-    // Dahlia: petalCount = Math.max(8, 16 + petalCountModifier)
-    const dahliaCount = Math.max(8, 16 + (-10));
-    expect(dahliaCount).toBe(8);
-    expect(dahliaCount).toBeGreaterThanOrEqual(1);
+  function makeGuardPlant(type: PlantType): PlantData {
+    return {
+      id: 0,
+      type,
+      x: 0.5,
+      maxHeight: 0.8,
+      flowerColor: '#e85d75',
+      stemColor: '#2d5a27',
+      leafColor: '#228b22',
+      delay: 0,
+      growDuration: 1,
+      seed: 4242,
+      petals: 7,
+      lean: 0.1,
+      scale: 1,
+      generation: 0,
+    };
+  }
 
-    // Hydrangea: floretCount = Math.max(8, 20 + petalCountModifier)
-    const hydrangeaCount = Math.max(8, 20 + (-15));
-    expect(hydrangeaCount).toBe(8);
-    expect(hydrangeaCount).toBeGreaterThanOrEqual(1);
+  /** Grass blade base count is seeded: 3 + floor(seededRandom(seed) * 3) */
+  const grassBase = 3 + Math.floor(seededRandom(4242) * 3);
 
-    // Peony: petalsInLayer = Math.max(4, 10 + layer * 2 + petalCountModifier)
-    for (let layer = 0; layer < 5; layer++) {
-      const peonyPetals = Math.max(4, 10 + layer * 2 + (-20));
-      expect(peonyPetals).toBe(4);
-      expect(peonyPetals).toBeGreaterThanOrEqual(1);
-    }
+  // [plant type, guarded formula, modifier at which the formula hits its minimum exactly]
+  const cases: Array<[PlantType, string, number]> = [
+    [PlantType.SimpleFlower, 'simple flower: max(3, petals + m), petals = 7', 3 - 7],
+    [PlantType.Daisy, 'daisy: max(8, 12 + m)', 8 - 12],
+    [PlantType.Wildflower, 'wildflower: max(3, 5 + m)', 3 - 5],
+    [PlantType.Grass, 'grass: max(2, base + m)', 2 - grassBase],
+    [PlantType.Fern, 'fern: max(4, 6 + m)', 4 - 6],
+    [PlantType.Bush, 'bush: max(5, 8 + m)', 5 - 8],
+    [PlantType.Lily, 'lily: max(4, 6 + m)', 4 - 6],
+    [PlantType.Succulent, 'succulent: max(3, 6 + m)', 3 - 6],
+    [PlantType.Sunflower, 'sunflower: max(8, 16 + m)', 8 - 16],
+    [PlantType.Hydrangea, 'hydrangea: max(8, 20 + m)', 8 - 20],
+    [PlantType.Dahlia, 'dahlia: max(4, 10 + layer*2 + m) for layers 0-3', 4 - 16],
+    [PlantType.Vine, 'climber: max(1, 3 + floor(m)) flowers of max(3, 5 + m) petals', 1 - 3],
+  ];
 
-    // Climber: numFlowers = Math.max(1, 3 + Math.floor(petalCountModifier))
-    const climberFlowers = Math.max(1, 3 + Math.floor(-10));
-    expect(climberFlowers).toBe(1);
-    expect(climberFlowers).toBeGreaterThanOrEqual(1);
+  it.each(cases)('%s clamps %s under an extreme negative modifier', (type, _formula, atMinimum) => {
+    const extreme = render(type, -100);
+    const boundary = render(type, atMinimum);
 
-    // SmallTree: numFlowers = Math.max(1, Math.floor(petalCountModifier))
-    const treeFlowers = Math.max(1, Math.floor(-5));
-    expect(treeFlowers).toBe(1);
-    expect(treeFlowers).toBeGreaterThanOrEqual(1);
-  });
-
-  it('should produce positive counts with typical modifier range', () => {
-    // Test with typical modifier range (-3 to +3)
-    for (const modifier of [-3, -2, -1, 0, 1, 2, 3]) {
-      // Climber flowers
-      const climber = Math.max(1, 3 + Math.floor(modifier));
-      expect(climber).toBeGreaterThanOrEqual(1);
-
-      // Succulent leaves
-      const succulent = Math.max(3, 6 + modifier);
-      expect(succulent).toBeGreaterThanOrEqual(3);
-    }
+    expect(extreme.problems).toEqual([]);
+    expect(boundary.problems).toEqual([]);
+    expect(extreme.ops.length).toBeGreaterThan(0);
+    // Clamped: going further negative than the minimum changes nothing
+    expect(extreme.ops).toEqual(boundary.ops);
   });
 });
 

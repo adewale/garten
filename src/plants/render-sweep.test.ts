@@ -19,8 +19,8 @@ import { describe, it, expect } from 'vitest';
 import { drawPlant } from './renderers';
 import { getPlantCategory } from './generator';
 import { getPlantVariation } from './variations';
-import { PlantType } from '../types';
-import type { PlantData } from '../types';
+import { PlantType, PlantCategory } from '../types';
+import type { PlantData, PlantVariation } from '../types';
 import { GrowthProgressPool } from '../GrowthProgressPool';
 
 interface StrictCtxState {
@@ -30,7 +30,8 @@ interface StrictCtxState {
 
 function createStrictContext(): CanvasRenderingContext2D & StrictCtxState {
   const violations: string[] = [];
-  let saveDepth = 0;
+  // save()/restore() snapshot compositing state, as the real canvas does
+  const stateStack: Array<{ alpha: number; composite: GlobalCompositeOperation }> = [];
   let pathOps = 0;
   let pathFlushed = true;
   let flushes = 0;
@@ -69,7 +70,7 @@ function createStrictContext(): CanvasRenderingContext2D & StrictCtxState {
     flushes++;
   };
 
-  const ctx = {
+  const ctx: CanvasRenderingContext2D & StrictCtxState = {
     canvas: {} as HTMLCanvasElement,
     fillStyle: '',
     strokeStyle: '',
@@ -106,14 +107,16 @@ function createStrictContext(): CanvasRenderingContext2D & StrictCtxState {
       checkFinite('clearRect', args);
     },
     save() {
-      saveDepth++;
+      stateStack.push({ alpha: ctx.globalAlpha, composite: ctx.globalCompositeOperation });
     },
     restore() {
-      if (saveDepth === 0) {
+      const state = stateStack.pop();
+      if (!state) {
         violations.push('restore() without matching save()');
         return;
       }
-      saveDepth--;
+      ctx.globalAlpha = state.alpha;
+      ctx.globalCompositeOperation = state.composite;
     },
     translate: (...args: number[]) => checkFinite('translate', args),
     rotate: (...args: number[]) => checkFinite('rotate', args),
@@ -124,8 +127,17 @@ function createStrictContext(): CanvasRenderingContext2D & StrictCtxState {
     get violations() {
       // End-of-draw checks are evaluated lazily by the test
       const result = [...violations];
-      if (saveDepth !== 0) {
-        result.push(`unbalanced save/restore: depth ${saveDepth} at end of draw`);
+      if (stateStack.length !== 0) {
+        result.push(`unbalanced save/restore: depth ${stateStack.length} at end of draw`);
+      }
+      // Leaked compositing state would tint every plant drawn after this one
+      if (ctx.globalAlpha !== 1) {
+        result.push(`globalAlpha left at ${ctx.globalAlpha} at end of draw`);
+      }
+      if (ctx.globalCompositeOperation !== 'source-over') {
+        result.push(
+          `globalCompositeOperation left at '${ctx.globalCompositeOperation}' at end of draw`
+        );
       }
       if (pathOps > 0 && !pathFlushed) {
         result.push(`draw ended with an unflushed path of ${pathOps} op(s)`);
@@ -207,5 +219,87 @@ describe('Exhaustive: every plant type renders cleanly at every growth stage', (
         expect(ctx.violations, `${type} ${JSON.stringify(overrides)}`).toEqual([]);
       }
     }
+  });
+});
+
+/**
+ * Wraps the strict context in a recorder: every method call is logged with
+ * its arguments rounded to 2 decimals, giving a renderer "op-stream" signature
+ * that is stable across runs but distinguishes renderers.
+ */
+function createSignatureContext(): {
+  ctx: CanvasRenderingContext2D & StrictCtxState;
+  ops: string[];
+} {
+  const strict = createStrictContext();
+  const ops: string[] = [];
+  const fmt = (a: unknown) => (typeof a === 'number' ? a.toFixed(2) : String(a));
+  const ctx = new Proxy(strict, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        ops.push(`${String(prop)}(${args.map(fmt).join(',')})`);
+        return (value as (...a: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  });
+  return { ctx, ops };
+}
+
+describe('Exhaustive: category dispatch routes to distinct renderers', () => {
+  // A mis-routed category (e.g. Conifer drawn by the SimpleFlower renderer)
+  // still draws *something* cleanly, so the sweep above cannot see it. Render
+  // one plant per category with identical inputs (same seed, geometry and
+  // variation) through the real type -> category -> renderer dispatch: any
+  // two categories sharing a renderer then produce identical op streams.
+  const ALL_CATEGORIES = Object.values(PlantCategory).filter(
+    (c): c is PlantCategory => typeof c === 'number'
+  );
+  const NEUTRAL_VARIATION: PlantVariation = {
+    sizeMultiplier: 1,
+    heightMultiplier: 1,
+    petalCountModifier: 0,
+    thicknessMultiplier: 1,
+    leanMultiplier: 1,
+    complexity: 0.8, // above every detail threshold, so all branches draw
+  };
+
+  it('all 19 categories produce pairwise-distinct op-stream signatures at full growth', () => {
+    expect(ALL_CATEGORIES).toHaveLength(19);
+    const pool = new GrowthProgressPool({ devMode: true });
+    const signatureOwner = new Map<string, PlantCategory>();
+    const collisions: string[] = [];
+
+    for (const category of ALL_CATEGORIES) {
+      const type = ALL_PLANT_TYPES.find((t) => getPlantCategory(t) === category);
+      expect(type, `no plant type in category ${PlantCategory[category]}`).toBeDefined();
+
+      const { ctx, ops } = createSignatureContext();
+      pool.beginFrame();
+      // category left undefined so drawPlant resolves it from the type
+      drawPlant(
+        ctx,
+        makePlant(type!, { maxHeight: 0.8, category: undefined, variation: NEUTRAL_VARIATION }),
+        800,
+        600,
+        1,
+        pool
+      );
+      pool.endFrame();
+
+      expect(ctx.violations, PlantCategory[category]).toEqual([]);
+      expect(ops.length, `${PlantCategory[category]} drew nothing`).toBeGreaterThan(0);
+
+      const signature = ops.join(';');
+      const owner = signatureOwner.get(signature);
+      if (owner !== undefined) {
+        collisions.push(`${PlantCategory[category]} renders identically to ${PlantCategory[owner]}`);
+      } else {
+        signatureOwner.set(signature, category);
+      }
+    }
+
+    expect(collisions).toEqual([]);
   });
 });

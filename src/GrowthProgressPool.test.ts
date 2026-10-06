@@ -263,6 +263,33 @@ describe('GrowthProgressPool', () => {
       pool.endFrame();
     });
 
+    it('should allocate nothing after warm-up: sustained frames reuse the same instances', () => {
+      // Deterministic form of "the pool beats allocation": after the first
+      // frame, every acquire hands back an instance from that frame, so a
+      // steady render loop creates no garbage.
+      const PER_FRAME = 500;
+      pool.beginFrame();
+      const warmUp = new Set<MutableGrowthProgress>();
+      for (let i = 0; i < PER_FRAME; i++) warmUp.add(pool.acquireAndCalculate(i, 0, 1000));
+      pool.endFrame();
+      expect(warmUp.size).toBe(PER_FRAME);
+      const { poolSize: sizeAfterWarmUp, growthEvents: growthAfterWarmUp } = pool.getStats();
+
+      for (let frame = 0; frame < 50; frame++) {
+        pool.beginFrame();
+        for (let i = 0; i < PER_FRAME; i++) {
+          const obj = pool.acquireAndCalculate(frame * 16 + i, 0, 1000);
+          if (!warmUp.has(obj)) {
+            throw new Error(`frame ${frame} acquire ${i} returned a new object`);
+          }
+        }
+        pool.endFrame();
+      }
+
+      expect(pool.getStats().poolSize).toBe(sizeAfterWarmUp);
+      expect(pool.getStats().growthEvents).toBe(growthAfterWarmUp);
+    });
+
     it('should provide distinct objects within same frame', () => {
       pool.beginFrame();
       const obj1 = pool.acquire();

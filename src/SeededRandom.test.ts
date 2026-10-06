@@ -325,8 +325,12 @@ describe('SeededRandom', () => {
 
 describe('Legacy compatibility functions', () => {
   describe('seededRandom', () => {
-    it('should be deterministic', () => {
-      expect(seededRandom(12345)).toBe(seededRandom(12345));
+    it('should match golden values (identical in every JS engine)', () => {
+      // Pinned literal outputs: the hash is pure 32-bit integer math, so any
+      // engine must reproduce these bit-for-bit. A change here changes every
+      // seeded garden users have shipped.
+      expect(seededRandom(1)).toBe(0.5266567736398429);
+      expect(seededRandom(12345)).toBe(0.5258435360156);
     });
 
     it('should return value in [0, 1)', () => {
@@ -337,6 +341,25 @@ describe('Legacy compatibility functions', () => {
   });
 
   describe('createRandom', () => {
+    it('should match golden values for seed 42 (identical in every JS engine)', () => {
+      // The README promises "same seed produces the same garden in every
+      // engine"; these literals are the Node-side golden for that claim.
+      const rand = createRandom(42);
+      expect(Array.from({ length: 8 }, () => rand())).toEqual([
+        0.156374619808048, 0.6335184210911393, 0.5499784420244396, 0.9933013359550387,
+        0.8965381442103535, 0.24320829613134265, 0.7027762830257416, 0.7371317779179662,
+      ]);
+    });
+
+    it('should return values in [0, 1)', () => {
+      const rand = createRandom(12345);
+      for (let i = 0; i < 100; i++) {
+        const v = rand();
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThan(1);
+      }
+    });
+
     it('should create auto-incrementing random function', () => {
       const rand = createRandom(12345);
       const v1 = rand();
