@@ -193,8 +193,9 @@ The suite's strength is verified, not assumed:
   timeouts as detected; a 2026-09 local run with 23 timeouts scored 75.75%
   against CI's 73.86% with 3–5). The per-change guarantees come from the
   defect probes and from planting each new test's bug before trusting it.
-- Property tests and fuzzing cover inputs, not oracles: a property such as
-  "monotone and bounded" passed the inverted timing curves unchanged.
+- Property tests and fuzzing cover inputs, not oracles: the properties
+  "monotone and bounded" held for the inverted timing curves too, so they
+  never caught the inversion.
   Prefer properties that pin the right answer (inverses, comparison with a
   simple reference, exact fallback values), and check each one fails on a
   planted bug.
