@@ -103,7 +103,7 @@ The `timingCurve` option controls how generations are spread over the duration. 
 - `'linear'` (default): Even pacing; start = `g/N`
 - `'ease-out'`: Fast start, generations arrive quickly and then slow down; start = `1 - (1 - g/N)^(1/2)` (ease-out of power 2)
 - `'ease-in'`: Slow start, speeding up; start = `(g/N)^0.5` (ease-in of power 2)
-- `'ease-in-out'`: Slow start and end, fast middle; start = inverse smoothstep `0.5 - sin(asin(1 - 2x)/3)`
+- `'ease-in-out'`: Slow start and end, fast middle; start = inverse of `eased('ease-in-out')`: `sqrt(x/2)` for `x <= 0.5`, mirrored (`1 - sqrt((1-x)/2)`) above
 - `number` `e` (clamped to 0.1-10): `e > 1` is ease-out of power `e` (start = `1 - (1 - g/N)^(1/e)`); `e < 1` is ease-in of power `1/e` (start = `(g/N)^e`)
 
 `generationComplete` fires from the plants' actual end times (`getGenerationEndTimes()` in `generator.ts`), so it follows the curve too.

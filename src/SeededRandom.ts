@@ -24,6 +24,21 @@ function hashSeed(seed: number): number {
   return h / 0x100000000;
 }
 
+const UINT32_RANGE = 0x100000000;
+
+/**
+ * Normalize a seed so that seed++ keeps advancing the stream. At
+ * |seed| >= 2^53, seed++ is a no-op and every draw would repeat; there every
+ * double is an integer and hashSeed only sees it modulo 2^32, so wrapping it
+ * into [0, 2^32) keeps the stream exactly. Smaller seeds are returned as is.
+ * Non-finite seeds become 0.
+ */
+function normalizeSeed(seed: number): number {
+  if (!Number.isFinite(seed)) return 0;
+  if (Math.abs(seed) < Number.MAX_SAFE_INTEGER + 1) return seed;
+  return ((seed % UINT32_RANGE) + UINT32_RANGE) % UINT32_RANGE;
+}
+
 /**
  * SeededRandom class - A comprehensive seeded pseudo-random number generator
  *
@@ -65,9 +80,7 @@ export class SeededRandom {
    * @param seed Initial seed value
    */
   constructor(seed: number) {
-    // Non-finite seeds (NaN/Infinity) would silently collapse to one stream;
-    // normalize deterministically instead
-    const normalized = Number.isFinite(seed) ? seed : 0;
+    const normalized = normalizeSeed(seed);
     this._initialSeed = normalized;
     this._seed = normalized;
   }
@@ -108,7 +121,7 @@ export class SeededRandom {
    * Set a new seed
    */
   setSeed(seed: number): void {
-    const normalized = Number.isFinite(seed) ? seed : 0;
+    const normalized = normalizeSeed(seed);
     this._seed = normalized;
     this._initialSeed = normalized;
   }
@@ -136,9 +149,7 @@ export class SeededRandom {
    * Random float in range [min, max)
    */
   range(min: number, max: number): number {
-    const value = min + this.next() * (max - min);
-    // Rounding can land exactly on max when the span is tiny next to max
-    return value < max ? value : min;
+    return rangeFrom(this.next(), min, max);
   }
 
   /**
@@ -248,18 +259,23 @@ export class SeededRandom {
       throw new Error('SeededRandom.weightedPick: Cannot pick from empty array');
     }
 
-    const totalWeight = items.reduce((sum, item) => sum + item.weight, 0);
-    let roll = this.next() * totalWeight;
+    const totalWeight = items.reduce((sum, item) => sum + Math.max(0, item.weight), 0);
+    let roll = this.next() * totalWeight; // in [0, totalWeight)
 
+    let last = items[items.length - 1];
     for (const item of items) {
-      roll -= item.weight;
-      if (roll <= 0) {
+      // Zero-weight items are never picked (a roll of exactly 0 used to pick
+      // a leading zero-weight item)
+      if (!(item.weight > 0)) continue;
+      last = item;
+      if (roll < item.weight) {
         return item.value;
       }
+      roll -= item.weight;
     }
 
-    // Fallback to last item (shouldn't happen due to floating point)
-    return items[items.length - 1].value;
+    // Floating-point leftovers: the last item that has weight
+    return last.value;
   }
 
   /**
@@ -395,8 +411,8 @@ export class SeededRandom {
    * Restore state from serialized data
    */
   setState(state: { seed: number; initialSeed: number }): void {
-    this._seed = state.seed;
-    this._initialSeed = state.initialSeed;
+    this._seed = normalizeSeed(state.seed);
+    this._initialSeed = normalizeSeed(state.initialSeed);
   }
 
   /**
@@ -404,7 +420,8 @@ export class SeededRandom {
    * Useful for skipping ahead in the sequence
    */
   skip(n: number): void {
-    this._seed += n;
+    // Same arithmetic as n calls to next(), so the two always agree
+    for (let i = 0; i < n; i++) this._seed++;
   }
 
   /**
@@ -444,7 +461,8 @@ export function seededRandom(seed: number): number {
  * Compatible with existing createRandom pattern
  */
 export function createRandom(initialSeed: number): () => number {
-  let seed = initialSeed;
+  // Same normalization as SeededRandom, so the two streams agree for every seed
+  let seed = normalizeSeed(initialSeed);
   return () => seededRandom(seed++);
 }
 
@@ -461,5 +479,16 @@ export function pickRandom<T>(array: readonly T[], rand: () => number): T {
  * Compatible with existing randomRange pattern
  */
 export function randomRange(min: number, max: number, rand: () => number): number {
-  return min + rand() * (max - min);
+  return rangeFrom(rand(), min, max);
+}
+
+/**
+ * A value in [min, max) from a draw u in [0, 1). min + u * (max - min) can
+ * round up to max when the span is tiny next to max, and max - min can
+ * overflow; both fall back to staying inside the range.
+ */
+function rangeFrom(u: number, min: number, max: number): number {
+  const span = max - min;
+  const value = Number.isFinite(span) ? min + u * span : min + u * max - u * min;
+  return value < max ? value : min;
 }

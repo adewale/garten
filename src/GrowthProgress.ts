@@ -277,10 +277,13 @@ export class GrowthProgress {
     switch (easing) {
       case 'ease-in':
         return t * t;
+      // t(2 - t) is not monotone at ulp scale near 1, and 1 - (1 - t)²
+      // underflows below linear near 0: use each where it is exact enough
+      // (both are 0.75 at t = 0.5)
       case 'ease-out':
-        return t * (2 - t);
+        return t < 0.5 ? t * (2 - t) : 1 - (1 - t) * (1 - t);
       case 'ease-in-out':
-        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+        return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
       case 'linear':
       default:
         return t;
@@ -310,9 +313,9 @@ export class GrowthProgress {
       case 'ease-in':
         return t * t;
       case 'ease-out':
-        return t * (2 - t);
+        return t < 0.5 ? t * (2 - t) : 1 - (1 - t) * (1 - t); // as in eased()
       case 'ease-in-out':
-        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+        return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
       case 'linear':
       default:
         return t;
@@ -376,7 +379,8 @@ export function calculateGrowthPhases(
   growDuration: number
 ): GrowthPhases | null {
   const rawProgress = rawGrowthProgress(time, delay, growDuration);
-  if (rawProgress <= 0) return null;
+  // NaN progress counts as not started, as in GrowthProgress
+  if (!(rawProgress > 0)) return null;
 
   // Clamp like GrowthProgress/MutableGrowthProgress so all three growth
   // calculators agree on fully-grown plants
@@ -394,14 +398,16 @@ export function calculateGrowthPhases(
  * Check if a plant should be rendered at the given time
  */
 export function isPlantActive(time: number, delay: number): boolean {
-  return time >= delay;
+  // At time === delay progress is 0: not started (as GrowthProgress.isActive)
+  return time > delay;
 }
 
 /**
  * Calculate raw progress (0-1) without phase separation
  */
 export function calculateRawProgress(time: number, delay: number, duration: number): number {
-  return Math.max(0, Math.min(1, rawGrowthProgress(time, delay, duration)));
+  const progress = rawGrowthProgress(time, delay, duration);
+  return Number.isNaN(progress) ? 0 : Math.max(0, Math.min(1, progress));
 }
 
 /**

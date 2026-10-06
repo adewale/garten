@@ -216,7 +216,10 @@ describe('Vec2 properties', () => {
 
   it('setLength produces correct length for non-zero vectors', () => {
     // normalize (a few ulps) then one rounded multiplication per component
-    fc.assert(fc.property(nonZeroVec, fc.double({ min: 0, noNaN: true, noDefaultInfinity: true }), (v, len) => {
+    // Contract domain: target lengths that stay representable after a few
+    // ulps of rounding (see rotation)
+    const lengthArb = fc.double({ min: 0, max: Number.MAX_VALUE * (1 - 16 * Number.EPSILON), noNaN: true });
+    fc.assert(fc.property(nonZeroVec, lengthArb, (v, len) => {
       // Components are rounded to representable doubles; below the normal
       // range that step is Number.MIN_VALUE, not a relative epsilon
       const tolerance = Math.max(8 * Number.EPSILON * len, 2 * Number.MIN_VALUE);

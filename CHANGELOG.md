@@ -51,9 +51,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `applyTheme(name, { fadeColor })`: an explicit `fadeColor` in the options
   now wins over the theme's (matching how explicit `colors` already win);
   before, the theme silently overrode it
-- `normalizeSeed` documentation: seeds wrap modulo 1e9 into [0, 1e9), so
-  seeds that differ by a multiple of 1e9 (e.g. `-1` and `999999999`) give
-  the same garden
+- Seeds wrap modulo 1e9 into [0, 1e9) exactly: in-range seeds (fractional
+  ones included) are kept as given (`0.3` used to become
+  `0.2999999523162842`), and resolving is idempotent. Seeds that differ by
+  a multiple of 1e9 (e.g. `-1` and `999999999`) give the same garden
+- `resolveOptions` no longer crashes on non-string `categories` or custom
+  color entries (they are dropped with a warning), and an unknown
+  `timingCurve` name falls back to `'linear'` with a warning instead of
+  passing through
+- A plant is drawn exactly fully grown from its end time on (rounding left
+  it a hair short at `time === delay + growDuration`), and no generated
+  plant overruns the duration or `maxHeight` by a rounding error
+- `'ease-in-out'` start times now invert `GrowthProgress.eased('ease-in-out')`
+  as documented, start exactly at 0 and end exactly at 1, and the late half
+  mirrors the early half
+- `applyPreset`/`createConfig`: an explicit `undefined` option no longer
+  erases the preset's or theme's value
+- `EventEmitter`/`SimpleEventEmitter` follow DOM/Node re-entrancy rules: a
+  `once` listener fires at most once even if its handler re-emits; a
+  listener added during an emit waits for the next emit; a handler that
+  unsubscribes itself and subscribes a replacement keeps the replacement
+- Value objects and helpers at the edges of their domains:
+  - `Color.fromHex` accepts only an optional `#` and 3, 6 or 8 hex digits
+    (`'#1g2233'` and `'ab#cdef'` used to parse); `Color.parse` rejects
+    surrounding garbage and accepts exponent-notation alphas it emits;
+    NaN channels become 0 and NaN alpha 1
+  - `Vec2` lengths and distances use `Math.hypot` (no overflow/underflow);
+    `lerp` (and `Color.mix`) return exact endpoints; `moveTowards` lands
+    exactly on a target within reach
+  - `SeededRandom`/`createRandom` agree for every seed (non-finite seeds
+    are 0 in both; seeds beyond 2^53 no longer repeat one value forever,
+    which made `pickMultiple` hang); `range`/`randomRange` never return
+    `max`; `weightedPick` never picks a zero-weight item
+  - `GrowthProgress` helpers agree with the class on NaN input and at the
+    start time; `ease-out`/`ease-in-out` are monotone at full precision
+  - `GrowthProgressPool` always grows by at least one object (small pools
+    with a 1.1 growth factor used to stall) and accepts fractional sizes
+  - `drawStem`/`drawLeaf` reject NaN growth and size
 - Docs: `regenerate()` keeps the current seed (use `setOptions({ seed })`
   for a new garden); `maxHeight` category thresholds and tall-plant shares
   match the generator; `events` and `on()` are described as four callbacks

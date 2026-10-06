@@ -97,19 +97,15 @@ export class Vec2 implements Point {
    * @param t Interpolation factor (0-1)
    */
   static lerp(a: Vec2, b: Vec2, t: number): Vec2 {
-    return new Vec2(
-      a.x + (b.x - a.x) * t,
-      a.y + (b.y - a.y) * t
-    );
+    return a.lerp(b, t); // one formula, with exact endpoints
   }
 
   /**
    * Get distance between two points
    */
   static distance(a: Point, b: Point): number {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    return Math.sqrt(dx * dx + dy * dy);
+    // hypot, like length(): no overflow/underflow from squaring
+    return Math.hypot(b.x - a.x, b.y - a.y);
   }
 
   /**
@@ -316,13 +312,14 @@ export class Vec2 implements Point {
   moveTowards(target: Point, maxDistance: number): Vec2 {
     const dx = target.x - this.x;
     const dy = target.y - this.y;
-    const distSq = dx * dx + dy * dy;
+    // Compare distances (not squares) with the same hypot as distanceTo(), so
+    // moveTowards(t, from.distanceTo(t)) always lands exactly on t
+    const dist = Math.hypot(dx, dy);
 
-    if (distSq === 0 || distSq <= maxDistance * maxDistance) {
+    if (dist === 0 || dist <= maxDistance) {
       return new Vec2(target.x, target.y);
     }
 
-    const dist = Math.sqrt(distSq);
     return new Vec2(
       this.x + (dx / dist) * maxDistance,
       this.y + (dy / dist) * maxDistance

@@ -385,9 +385,10 @@ export function applyPreset(
       }
     : undefined;
 
+  // omitUndefined: an explicit undefined must not erase the preset's value
   return {
     ...presetConfig.options,
-    ...options,
+    ...omitUndefined(options),
     ...(mergedColors ? { colors: mergedColors } : {}),
   };
 }
@@ -416,7 +417,7 @@ export function createConfig(
 
   return {
     ...themedOptions,
-    ...options,
+    ...omitUndefined(options),
     ...(mergedColors ? { colors: mergedColors } : {}),
   };
 }

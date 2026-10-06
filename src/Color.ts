@@ -21,6 +21,9 @@ export interface HSL {
   l: number;
 }
 
+/** Hex color grammar accepted by Color.fromHex */
+const HEX_GRAMMAR = /^#?(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
 /**
  * Color value object with comprehensive color manipulation utilities
  * Immutable - all operations return new Color instances
@@ -77,7 +80,10 @@ export class Color {
    * Supports #RGB, #RRGGBB, and #RRGGBBAA formats
    */
   static fromHex(hex: string): Color | null {
-    const cleaned = hex.replace('#', '');
+    // Exactly an optional leading '#' and 3, 6 or 8 hex digits: parseInt alone
+    // accepts partial input ('1g' -> 1) and replace('#') stripped a '#' anywhere
+    if (!HEX_GRAMMAR.test(hex)) return null;
+    const cleaned = hex.charAt(0) === '#' ? hex.slice(1) : hex;
 
     let r: number, g: number, b: number, a: number = 255;
 
@@ -166,7 +172,9 @@ export class Color {
     }
 
     // RGB/RGBA format
-    const rgbMatch = str.match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/);
+    // Anchored (no surrounding garbage); alpha may use exponent notation,
+    // which toRGBString() emits for tiny alphas
+    const rgbMatch = str.match(/^rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+(?:e[-+]?\d+)?))?\s*\)$/);
     if (rgbMatch) {
       return new Color(
         parseInt(rgbMatch[1]),
@@ -177,7 +185,7 @@ export class Color {
     }
 
     // HSL/HSLA format
-    const hslMatch = str.match(/hsla?\s*\(\s*(\d+)\s*,\s*(\d+)%?\s*,\s*(\d+)%?\s*(?:,\s*([\d.]+))?\s*\)/);
+    const hslMatch = str.match(/^hsla?\s*\(\s*(\d+)\s*,\s*(\d+)%?\s*,\s*(\d+)%?\s*(?:,\s*([\d.]+(?:e[-+]?\d+)?))?\s*\)$/);
     if (hslMatch) {
       return Color.fromHSL(
         parseInt(hslMatch[1]),

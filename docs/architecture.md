@@ -91,7 +91,8 @@ returns that inverse:
 // linear:       x
 // ease-out (e): 1 - (1 - x) ** (1 / e)   // 'ease-out' uses e = 2
 // ease-in  (e): x ** e                    // 'ease-in' uses e = 0.5 (power 2)
-// ease-in-out:  0.5 - Math.sin(Math.asin(1 - 2 * x) / 3)  // inverse smoothstep
+// ease-in-out:  x <= 0.5 ? sqrt(x / 2) : 1 - sqrt((1 - x) / 2)
+//               (inverse of eased('ease-in-out'); late half mirrors the early half)
 warpedStart = applyTimingCurve(gen, totalGens, curve);
 warpedEnd = applyTimingCurve(gen + 1, totalGens, curve);
 genDelay = warpedStart * duration;

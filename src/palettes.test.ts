@@ -8,19 +8,15 @@ import {
   buildFlowerColors,
   buildFoliageColors,
 } from './palettes';
-import type { ColorPalette } from './types';
+import type { ColorPalette, ColorOptions } from './types';
+import * as fc from 'fast-check';
+import { Color, lightenColor, darkenColor } from './Color';
 
 const ALL_PALETTES: ColorPalette[] = ['natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone'];
 const STANDARD_PALETTES: ColorPalette[] = ['natural', 'warm', 'cool', 'grayscale', 'vibrant'];
 
 function rgb(hex: string): [number, number, number] {
   return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
-}
-
-/** Rec. 601 luma, enough to order tints and shades of one hue */
-function luma(hex: string): number {
-  const [r, g, b] = rgb(hex);
-  return 0.299 * r + 0.587 * g + 0.114 * b;
 }
 
 describe('flowerPalettes', () => {
@@ -97,352 +93,240 @@ describe('foliagePalettes', () => {
   });
 });
 
-describe('generateAccentVariants', () => {
-  it('should generate 5 variants including original', () => {
-    const variants = generateAccentVariants('#F6821F');
-    expect(variants).toHaveLength(5);
-    expect(variants[0]).toBe('#F6821F');
+// ==================== ARBITRARIES ====================
+
+const HEX6 = /^#[0-9A-Fa-f]{6}$/;
+
+/** Any 3- or 6-digit accent, mixed case, as users write them */
+const accentArb = fc
+  .tuple(fc.integer({ min: 0, max: 0xffffff }), fc.boolean(), fc.boolean())
+  .map(([n, short, upper]) => {
+    let hex = short
+      ? [n & 0xf, (n >> 4) & 0xf, (n >> 8) & 0xf].map((d) => d.toString(16)).join('')
+      : n.toString(16).padStart(6, '0');
+    if (upper) hex = hex.toUpperCase();
+    return '#' + hex;
+  });
+const hex6Arb = fc.integer({ min: 0, max: 0xffffff }).map((n) => '#' + n.toString(16).padStart(6, '0').toUpperCase());
+const paletteArb = fc.constantFrom(...ALL_PALETTES);
+const standardArb = fc.constantFrom<ColorPalette>('natural', 'warm', 'cool', 'vibrant');
+/**
+ * accentWeight over its whole domain: uniform reals in [0, 1] (fc.double
+ * alone is dominated by tiny values), plus every double for the hostile end
+ */
+const weightArb = fc.oneof(
+  fc.integer({ min: 0, max: 2 ** 20 }).map((i) => i / 2 ** 20),
+  fc.double()
+);
+const customArb = fc.option(fc.array(hex6Arb, { maxLength: 6 }), { nil: undefined });
+
+const optionsArb = fc.record({
+  accent: accentArb,
+  palette: paletteArb,
+  flowerColors: customArb,
+  foliageColors: customArb,
+  accentWeight: weightArb,
+}) as fc.Arbitrary<Required<ColorOptions>>;
+
+function channels(hex: string): [number, number, number] {
+  const c = Color.fromHex(hex)!;
+  return [c.r, c.g, c.b];
+}
+
+/** a <= b in every channel */
+function noLighter(a: string, b: string): boolean {
+  const [x, y] = [channels(a), channels(b)];
+  return x.every((v, i) => v <= y[i]);
+}
+
+/** Split a standard-palette result into the accent prefix and the base suffix */
+function split(result: string[], palette: ColorPalette): { accent: string[]; base: string[] } {
+  const B = flowerPalettes[palette].length;
+  return { accent: result.slice(0, result.length - B), base: result.slice(result.length - B) };
+}
+
+// ==================== GENERATORS OF DERIVED COLORS ====================
+
+describe('Property: accent variants and monotone colors are tints and shades of the accent', () => {
+  it('generateAccentVariants is [accent, +15%, -15%, +30%, -8%] in per-channel lightness order', () => {
+    fc.assert(
+      fc.property(accentArb, (accent) => {
+        const v = generateAccentVariants(accent);
+        expect(v).toHaveLength(5);
+        expect(v[0]).toBe(accent);
+        for (const c of v.slice(1)) expect(c).toMatch(HEX6);
+        // lighten .3 >= lighten .15 >= accent >= darken .08 >= darken .15, channel by channel
+        expect(noLighter(v[1], v[3]) && noLighter(v[0], v[1]) && noLighter(v[4], v[0]) && noLighter(v[2], v[4])).toBe(true);
+        expect(v[1]).toBe(lightenColor(accent, 0.15));
+        expect(v[2]).toBe(darkenColor(accent, 0.15));
+      }),
+      { numRuns: 2000 }
+    );
   });
 
-  it('should generate valid hex colors', () => {
-    const hexPattern = /^#[0-9A-Fa-f]{6}$/;
-    const variants = generateAccentVariants('#FF0000');
-    for (const variant of variants) {
-      expect(variant).toMatch(hexPattern);
-    }
-  });
-});
-
-describe('generateMonotoneFlowerColors', () => {
-  it('should generate 7 tints and shades', () => {
-    const colors = generateMonotoneFlowerColors('#F6821F');
-    expect(colors).toHaveLength(7);
-  });
-
-  it('should include the original accent color', () => {
-    const accent = '#F6821F';
-    const colors = generateMonotoneFlowerColors(accent);
-    expect(colors).toContain(accent);
-  });
-
-  it('should generate valid hex colors', () => {
-    const hexPattern = /^#[0-9A-Fa-f]{6}$/;
-    const colors = generateMonotoneFlowerColors('#FF5500');
-    for (const color of colors) {
-      expect(color).toMatch(hexPattern);
-    }
-  });
-
-  it('should have lighter colors before the accent and darker after', () => {
-    const accent = '#808080'; // Mid-gray for easy comparison
-    const colors = generateMonotoneFlowerColors(accent);
-    const accentIndex = colors.indexOf(accent);
-
-    expect(accentIndex).toBeGreaterThan(0);
-    expect(accentIndex).toBeLessThan(colors.length - 1);
-    // Ordered from lightest tint to darkest shade
-    for (let i = 1; i < colors.length; i++) {
-      expect(luma(colors[i]), `${colors[i - 1]} -> ${colors[i]}`).toBeLessThan(luma(colors[i - 1]));
-    }
-  });
-});
-
-describe('generateMonotoneFoliageColors', () => {
-  it('should derive every leaf and stem from the accent hue (darker shades)', () => {
-    const accent = '#F6821F';
-    const foliage = generateMonotoneFoliageColors(accent);
-    const accentLuma = luma(accent);
-    for (const color of [...foliage.leaves, ...foliage.stems]) {
-      expect(color).toMatch(/^#[0-9A-Fa-f]{6}$/);
-      expect(luma(color), color).toBeLessThan(accentLuma);
-      // Pure darkening keeps the channel ordering of the accent (R > G > B)
-      const [r, g, b] = rgb(color);
-      expect(r, color).toBeGreaterThan(g);
-      expect(g, color).toBeGreaterThan(b);
-    }
-  });
-
-  it('should generate 5 leaf colors and 4 stem colors', () => {
-    const foliage = generateMonotoneFoliageColors('#F6821F');
-    expect(foliage.leaves).toHaveLength(5);
-    expect(foliage.stems).toHaveLength(4);
-  });
-
-  it('should generate valid hex colors', () => {
-    const hexPattern = /^#[0-9A-Fa-f]{6}$/;
-    const foliage = generateMonotoneFoliageColors('#0088FF');
-    for (const color of foliage.leaves) {
-      expect(color).toMatch(hexPattern);
-    }
-    for (const color of foliage.stems) {
-      expect(color).toMatch(hexPattern);
-    }
-  });
-
-  it('should make stems darker than leaves', () => {
-    const foliage = generateMonotoneFoliageColors('#8888FF');
-    // Compare average brightness
-    const avgLeaf = foliage.leaves.reduce((sum, c) => sum + parseInt(c.slice(1), 16), 0) / foliage.leaves.length;
-    const avgStem = foliage.stems.reduce((sum, c) => sum + parseInt(c.slice(1), 16), 0) / foliage.stems.length;
-    expect(avgStem).toBeLessThan(avgLeaf);
-  });
-});
-
-describe('buildFlowerColors', () => {
-  const baseOptions = {
-    accent: '#F6821F',
-    palette: 'natural' as ColorPalette,
-    flowerColors: [] as string[],
-    foliageColors: [] as string[],
-    accentWeight: 0.4,
-  };
-
-  it('should return custom colors if provided', () => {
-    const customColors = ['#FF0000', '#00FF00', '#0000FF'];
-    const result = buildFlowerColors({ ...baseOptions, flowerColors: customColors });
-    expect(result).toEqual(customColors);
-  });
-
-  it('should build weighted color array for standard palettes', () => {
-    const result = buildFlowerColors({ ...baseOptions, palette: 'natural', accentWeight: 0.5 });
-    expect(result.length).toBeGreaterThan(0);
-    // With 50% accent weight, should have accent colors in the result
-    expect(result.some(c => c === baseOptions.accent)).toBe(true);
-  });
-
-  it('should work with all palettes', () => {
-    const palettes: ColorPalette[] = ['natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone'];
-    for (const palette of palettes) {
-      const result = buildFlowerColors({ ...baseOptions, palette });
-      expect(result.length).toBeGreaterThan(0);
-    }
-  });
-
-  it('should respect accentWeight: 1 for standard palettes (only accent colors)', () => {
-    const result = buildFlowerColors({ ...baseOptions, palette: 'natural', accentWeight: 1 });
-    expect(result.length).toBeGreaterThan(0);
-    expect(result).toContain(baseOptions.accent);
-  });
-
-  it('should respect accentWeight: 0 for standard palettes (only palette colors)', () => {
-    const result = buildFlowerColors({ ...baseOptions, palette: 'natural', accentWeight: 0 });
-    expect(result.length).toBeGreaterThan(0);
-    expect(result).not.toContain(baseOptions.accent);
-  });
-});
-
-describe('buildFlowerColors - grayscale', () => {
-  const baseOptions = {
-    accent: '#F6821F',
-    palette: 'grayscale' as ColorPalette,
-    flowerColors: [] as string[],
-    foliageColors: [] as string[],
-    accentWeight: 0.4,
-  };
-
-  it('should return only grayscale colors regardless of accent', () => {
-    const result = buildFlowerColors(baseOptions);
-    expect(result).toEqual(flowerPalettes.grayscale);
-  });
-
-  it('should ignore accentWeight entirely', () => {
-    const result1 = buildFlowerColors({ ...baseOptions, accentWeight: 0 });
-    const result2 = buildFlowerColors({ ...baseOptions, accentWeight: 1 });
-    expect(result1).toEqual(result2);
-    expect(result1).toEqual(flowerPalettes.grayscale);
-  });
-
-  it('should ignore accent color entirely', () => {
-    const result1 = buildFlowerColors({ ...baseOptions, accent: '#FF0000' });
-    const result2 = buildFlowerColors({ ...baseOptions, accent: '#0000FF' });
-    expect(result1).toEqual(result2);
-    expect(result1).not.toContain('#FF0000');
-    expect(result1).not.toContain('#0000FF');
-  });
-
-  it('should produce truly achromatic colors', () => {
-    const result = buildFlowerColors(baseOptions);
-    for (const color of result) {
-      const r = parseInt(color.slice(1, 3), 16);
-      const g = parseInt(color.slice(3, 5), 16);
-      const b = parseInt(color.slice(5, 7), 16);
-      expect(r).toBe(g);
-      expect(g).toBe(b);
-    }
-  });
-});
-
-describe('buildFlowerColors - monotone', () => {
-  const baseOptions = {
-    accent: '#F6821F',
-    palette: 'monotone' as ColorPalette,
-    flowerColors: [] as string[],
-    foliageColors: [] as string[],
-    accentWeight: 0.4,
-  };
-
-  it('should derive all colors from accent', () => {
-    const result = buildFlowerColors(baseOptions);
-    expect(result).toHaveLength(7);
-    expect(result).toContain(baseOptions.accent);
-  });
-
-  it('should ignore accentWeight', () => {
-    const result1 = buildFlowerColors({ ...baseOptions, accentWeight: 0 });
-    const result2 = buildFlowerColors({ ...baseOptions, accentWeight: 1 });
-    expect(result1).toEqual(result2);
-  });
-
-  it('should change colors when accent changes', () => {
-    const result1 = buildFlowerColors({ ...baseOptions, accent: '#FF0000' });
-    const result2 = buildFlowerColors({ ...baseOptions, accent: '#0000FF' });
-    expect(result1).not.toEqual(result2);
-    expect(result1).toContain('#FF0000');
-    expect(result2).toContain('#0000FF');
-  });
-});
-
-describe('buildFoliageColors', () => {
-  const baseOptions = {
-    accent: '#F6821F',
-    palette: 'natural' as ColorPalette,
-    flowerColors: [] as string[],
-    foliageColors: [] as string[],
-    accentWeight: 0.4,
-  };
-
-  it('should return custom colors if provided', () => {
-    const customColors = ['#228B22', '#2E8B57'];
-    const result = buildFoliageColors({ ...baseOptions, foliageColors: customColors });
-    expect(result.leaves).toEqual(customColors);
-    expect(result.stems).toHaveLength(customColors.length);
-  });
-
-  it('should work with all standard palettes', () => {
-    const palettes: ColorPalette[] = ['natural', 'warm', 'cool', 'grayscale', 'vibrant'];
-    for (const palette of palettes) {
-      const result = buildFoliageColors({ ...baseOptions, palette });
-      expect(result.leaves.length).toBeGreaterThan(0);
-      expect(result.stems.length).toBeGreaterThan(0);
-    }
-  });
-
-  it('should return palette foliage colors for standard palettes', () => {
-    const result = buildFoliageColors({ ...baseOptions, palette: 'natural' });
-    expect(result.leaves).toEqual(foliagePalettes.natural.leaves);
-    expect(result.stems).toEqual(foliagePalettes.natural.stems);
-  });
-});
-
-describe('buildFoliageColors - grayscale', () => {
-  const baseOptions = {
-    accent: '#F6821F',
-    palette: 'grayscale' as ColorPalette,
-    flowerColors: [] as string[],
-    foliageColors: [] as string[],
-    accentWeight: 0.4,
-  };
-
-  it('should return grayscale foliage', () => {
-    const result = buildFoliageColors(baseOptions);
-    expect(result).toEqual(foliagePalettes.grayscale);
-  });
-
-  it('should produce truly achromatic foliage', () => {
-    const result = buildFoliageColors(baseOptions);
-    expect(result.leaves.length).toBeGreaterThan(0);
-    expect(result.stems.length).toBeGreaterThan(0);
-    for (const color of [...result.leaves, ...result.stems]) {
-      const [r, g, b] = rgb(color);
-      expect(r, color).toBe(g);
-      expect(g, color).toBe(b);
-    }
-  });
-
-  it('should ignore accent', () => {
-    const result1 = buildFoliageColors({ ...baseOptions, accent: '#FF0000' });
-    const result2 = buildFoliageColors({ ...baseOptions, accent: '#0000FF' });
-    expect(result1).toEqual(result2);
-  });
-});
-
-describe('buildFoliageColors - monotone', () => {
-  const baseOptions = {
-    accent: '#F6821F',
-    palette: 'monotone' as ColorPalette,
-    flowerColors: [] as string[],
-    foliageColors: [] as string[],
-    accentWeight: 0.4,
-  };
-
-  it('should derive foliage from accent', () => {
-    const result = buildFoliageColors(baseOptions);
-    expect(result.leaves).toHaveLength(5);
-    expect(result.stems).toHaveLength(4);
-  });
-
-  it('should change foliage when accent changes', () => {
-    const result1 = buildFoliageColors({ ...baseOptions, accent: '#FF0000' });
-    const result2 = buildFoliageColors({ ...baseOptions, accent: '#0000FF' });
-    expect(result1.leaves).not.toEqual(result2.leaves);
-    expect(result1.stems).not.toEqual(result2.stems);
-  });
-
-  it('should generate valid hex colors', () => {
-    const hexPattern = /^#[0-9A-Fa-f]{6}$/;
-    const result = buildFoliageColors(baseOptions);
-    for (const color of result.leaves) {
-      expect(color).toMatch(hexPattern);
-    }
-    for (const color of result.stems) {
-      expect(color).toMatch(hexPattern);
-    }
-  });
-});
-
-describe('Constraint: every built color is a well-formed value', () => {
-  // Added after mutation testing: mutants producing undefined entries or
-  // out-of-bounds indexing in the built color arrays survived the previous
-  // assertions (which only checked lengths and membership).
-  const hexPattern = /^#[0-9A-Fa-f]{3,8}$/;
-
-  it('flower colors are well-formed for every palette and weight', () => {
-    const palettes = ['natural', 'warm', 'cool', 'grayscale', 'vibrant', 'monotone'] as const;
-    for (const palette of palettes) {
-      for (const accentWeight of [0, 0.25, 0.4, 0.6, 0.9, 1]) {
-        const colors = buildFlowerColors({
-          accent: '#F6821F',
-          palette,
-          flowerColors: [],
-          foliageColors: [],
-          accentWeight,
-        });
-        expect(colors.length).toBeGreaterThan(0);
-        for (const color of colors) {
-          expect(color, `${palette} @ ${accentWeight}`).toMatch(hexPattern);
+  it('generateMonotoneFlowerColors runs from lightest tint to darkest shade with the accent in the middle', () => {
+    fc.assert(
+      fc.property(accentArb, (accent) => {
+        const colors = generateMonotoneFlowerColors(accent);
+        expect(colors).toHaveLength(7);
+        expect(colors[3]).toBe(accent);
+        for (let i = 1; i < colors.length; i++) {
+          expect(noLighter(colors[i], colors[i - 1]), `${colors[i - 1]} -> ${colors[i]}`).toBe(true);
         }
-      }
-    }
+      }),
+      { numRuns: 2000 }
+    );
   });
 
-  it('custom foliage stems are darkened well-formed colors, one per leaf', () => {
-    const custom = ['#228B22', '#6B8E23', '#556B2F'];
-    const result = buildFoliageColors({
-      accent: '#F6821F',
-      palette: 'natural',
-      flowerColors: [],
-      foliageColors: custom,
-      accentWeight: 0.4,
-    });
+  it('generateMonotoneFoliageColors: 5 leaves and 4 stems, all shades of the accent, every stem no lighter than any leaf', () => {
+    fc.assert(
+      fc.property(accentArb, (accent) => {
+        const { leaves, stems } = generateMonotoneFoliageColors(accent);
+        expect([leaves.length, stems.length]).toEqual([5, 4]);
+        for (const c of [...leaves, ...stems]) {
+          expect(c).toMatch(HEX6);
+          expect(noLighter(c, accent)).toBe(true);
+        }
+        for (const s of stems) for (const l of leaves) expect(noLighter(s, l), `${s} vs ${l}`).toBe(true);
+      }),
+      { numRuns: 2000 }
+    );
+  });
+});
 
-    expect(result.leaves).toEqual(custom);
-    expect(result.stems).toHaveLength(custom.length);
-    result.stems.forEach((stem, i) => {
-      expect(stem).toMatch(/^#[0-9A-Fa-f]{6}$/);
-      // Each stem must be a strictly darker variant of its leaf
-      const lum = (hex: string) =>
-        parseInt(hex.slice(1, 3), 16) + parseInt(hex.slice(3, 5), 16) + parseInt(hex.slice(5, 7), 16);
-      expect(lum(stem)).toBeLessThan(lum(custom[i]));
-    });
+// ==================== buildFlowerColors ====================
+
+describe('Property: buildFlowerColors over the full ColorOptions domain', () => {
+  it('non-empty custom flowerColors win over every other option, unchanged', () => {
+    fc.assert(
+      fc.property(optionsArb, fc.array(hex6Arb, { minLength: 1, maxLength: 6 }), (opts, custom) => {
+        expect(buildFlowerColors({ ...opts, flowerColors: custom })).toEqual(custom);
+      }),
+      { numRuns: 1000 }
+    );
+  });
+
+  it('grayscale (no custom colors) is exactly the achromatic base palette, whatever the accent and weight', () => {
+    fc.assert(
+      fc.property(optionsArb, fc.constantFrom<string[] | undefined>([], undefined), (opts, none) => {
+        const result = buildFlowerColors({ ...opts, palette: 'grayscale', flowerColors: none as string[] });
+        expect(result).toEqual(flowerPalettes.grayscale);
+        for (const c of result) {
+          const [r, g, b] = channels(c);
+          expect(r === g && g === b).toBe(true);
+        }
+      }),
+      { numRuns: 1000 }
+    );
+  });
+
+  it('monotone (no custom colors) is derived from the accent alone', () => {
+    fc.assert(
+      fc.property(optionsArb, fc.constantFrom<string[] | undefined>([], undefined), (opts, none) => {
+        const result = buildFlowerColors({ ...opts, palette: 'monotone', flowerColors: none as string[] });
+        expect(result).toEqual(generateMonotoneFlowerColors(opts.accent));
+      }),
+      { numRuns: 1000 }
+    );
+  });
+
+  it('standard palettes: every base color is reachable, in order, after a prefix of cycled accent variants', () => {
+    fc.assert(
+      fc.property(optionsArb, standardArb, (opts, palette) => {
+        const w = opts.accentWeight;
+        const result = buildFlowerColors({ ...opts, palette, flowerColors: [] });
+        const variants = generateAccentVariants(opts.accent);
+        if (w >= 1) {
+          expect(result).toEqual(variants);
+          return;
+        }
+        const { accent, base } = split(result, palette);
+        expect(base).toEqual(flowerPalettes[palette]);
+        accent.forEach((c, i) => expect(c).toBe(variants[i % variants.length]));
+        if (!(w > 0)) expect(accent).toEqual([]); // 0, negative and NaN mean no accent
+        else expect(accent.length).toBeGreaterThan(0);
+      }),
+      { numRuns: 1000 }
+    );
+  });
+
+  it('accent share tracks accentWeight: within 1/B below 0.9, saturating at 0.9, monotone in the weight', () => {
+    const inside = fc.integer({ min: 1, max: 2 ** 20 - 1 }).map((i) => i / 2 ** 20);
+    fc.assert(
+      fc.property(standardArb, accentArb, inside, inside, (palette, accent, w1, w2) => {
+        const B = flowerPalettes[palette].length;
+        const share = (w: number) => {
+          const a = split(buildFlowerColors({ accent, palette, flowerColors: [], foliageColors: [], accentWeight: w }), palette).accent.length;
+          return { a, f: a / (a + B) };
+        };
+        const [lo, hi] = w1 <= w2 ? [w1, w2] : [w2, w1];
+        const s1 = share(lo), s2 = share(hi);
+        expect(s1.a).toBeLessThanOrEqual(s2.a);
+        for (const [w, s] of [[lo, s1], [hi, s2]] as const) {
+          if (w <= 0.9) expect(Math.abs(s.f - w), `w=${w} share=${s.f}`).toBeLessThanOrEqual(1 / B);
+          else expect(s.f).toBeLessThanOrEqual(0.9);
+        }
+      }),
+      { numRuns: 1000, examples: [['natural', '#F6821F', 0.4, 0.9]] }
+    );
+  });
+
+  it('out-of-range weights clamp: below 0 behaves as 0 and above 1 as 1', () => {
+    fc.assert(
+      fc.property(optionsArb, standardArb, fc.double({ noNaN: true }), (opts, palette, w) => {
+        const base = { ...opts, palette, flowerColors: [] };
+        const clamped = Math.max(0, Math.min(1, w));
+        expect(buildFlowerColors({ ...base, accentWeight: w })).toEqual(buildFlowerColors({ ...base, accentWeight: clamped }));
+      }),
+      { numRuns: 1000 }
+    );
+  });
+
+  it('every built color is a well-formed hex color (custom colors pass through)', () => {
+    fc.assert(
+      fc.property(optionsArb, (opts) => {
+        const result = buildFlowerColors(opts);
+        expect(result.length).toBeGreaterThan(0);
+        for (const c of result) expect(Color.fromHex(c), c).not.toBeNull();
+      }),
+      { numRuns: 2000 }
+    );
+  });
+});
+
+// ==================== buildFoliageColors ====================
+
+describe('Property: buildFoliageColors over the full ColorOptions domain', () => {
+  it('non-empty custom foliage: leaves are the custom colors, each stem the 20% shade of its leaf', () => {
+    fc.assert(
+      fc.property(optionsArb, fc.array(hex6Arb, { minLength: 1, maxLength: 6 }), (opts, custom) => {
+        const { leaves, stems } = buildFoliageColors({ ...opts, foliageColors: custom });
+        expect(leaves).toEqual(custom);
+        expect(stems).toEqual(custom.map((c) => darkenColor(c, 0.2)));
+        stems.forEach((s, i) => expect(noLighter(s, custom[i])).toBe(true));
+      }),
+      { numRuns: 1000 }
+    );
+  });
+
+  it('without custom foliage: monotone derives from the accent, every other palette is its fixed foliage', () => {
+    fc.assert(
+      fc.property(optionsArb, fc.constantFrom<string[] | undefined>([], undefined), (opts, none) => {
+        const result = buildFoliageColors({ ...opts, foliageColors: none as string[] });
+        expect(result).toEqual(
+          opts.palette === 'monotone' ? generateMonotoneFoliageColors(opts.accent) : foliagePalettes[opts.palette]
+        );
+      }),
+      { numRuns: 2000 }
+    );
+  });
+
+  it('foliage never depends on flowerColors or accentWeight', () => {
+    fc.assert(
+      fc.property(optionsArb, customArb, weightArb, (opts, flowers, w) => {
+        expect(buildFoliageColors({ ...opts, flowerColors: flowers as string[], accentWeight: w })).toEqual(buildFoliageColors(opts));
+      }),
+      { numRuns: 1000 }
+    );
   });
 });

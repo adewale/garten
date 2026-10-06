@@ -268,8 +268,6 @@ export class GrowthProgressPool {
       return Math.max(min, Math.min(max, candidate));
     };
 
-    // Minimum of 1 for sizes (allow small values for testing), max 1M for performance scenarios
-    this.initialSize = sane(config.initialSize, DEFAULT_INITIAL_SIZE, 1, 1000000);
 
     // Default devMode: true in non-production environments
     let defaultDevMode = false;
@@ -282,7 +280,10 @@ export class GrowthProgressPool {
     // growthFactor must be > 1 to prevent infinite grow loops
     this.growthFactor = sane(config.growthFactor, DEFAULT_GROWTH_FACTOR, 1.1, 4);
     this.maxSizeWarning = sane(config.maxSizeWarning, DEFAULT_MAX_SIZE_WARNING, 1, 1000000);
-    this.maxSize = sane(config.maxSize, DEFAULT_MAX_SIZE, 1, 1000000);
+    this.maxSize = Math.floor(sane(config.maxSize, DEFAULT_MAX_SIZE, 1, 1000000));
+    // Sizes are whole object counts (a fractional size made new Array()
+    // throw); minimum 1 for testing, max 1M for performance scenarios
+    this.initialSize = Math.floor(sane(config.initialSize, DEFAULT_INITIAL_SIZE, 1, 1000000));
     this.shrinkThreshold = sane(config.shrinkThreshold, DEFAULT_SHRINK_THRESHOLD, 0.01, 0.99);
     this.lowUsageFramesBeforeShrink = sane(
       config.lowUsageFramesBeforeShrink,
@@ -427,9 +428,11 @@ export class GrowthProgressPool {
    */
   private grow(): void {
     const oldSize = this.pool.length;
-    const newSize = Math.floor(oldSize * this.growthFactor);
+    // Always add at least one object (floor(size * 1.1) === size for small
+    // pools, which used to stall acquire()), and never more than maxSize
+    const newSize = Math.min(this.maxSize, Math.max(oldSize + 1, Math.floor(oldSize * this.growthFactor)));
 
-    if (newSize > this.maxSize) {
+    if (oldSize >= this.maxSize) {
       throw new Error(
         `GrowthProgressPool: Maximum size ${this.maxSize} exceeded. ` +
           `This indicates a leak or unexpectedly high plant count.`

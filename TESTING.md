@@ -90,6 +90,38 @@ ever sampled that region — exhaustiveness is the structural fix.
 - Fake time completely (`requestAnimationFrame`, `performance`, timers); for
   multi-second jumps in one frame, drive the rAF callback by hand
 
+## Property-based tests
+
+The fast-check properties follow the Hegel property-testing guidance
+(hegel.dev; its `hegel-review` checklist) and Hypothesis's advice on
+oracles:
+
+- **Strong oracles.** Pin values against documented tables written out in
+  the test, not against `OPTION_BOUNDS`/`defaultOptions` (a wrong table must
+  not pass by construction). Prefer round-trips, a naive reference
+  implementation, metamorphic relations, and siblings agreeing (the legacy
+  `options.events` callbacks vs `on()`, `createRandom` vs `SeededRandom`,
+  pool vs `GrowthProgress`).
+- **Model-based tests for stateful APIs.** `Garden.test.ts` runs random
+  command sequences against a reference model of the controller and checks
+  state, elapsed time and every emitted event after each step;
+  `EventEmitter.test.ts` and `memory.test.ts` do the same for the emitter
+  and the pool.
+- **Full domains.** Generate every documented parameter, config knob and
+  hostile input (NaN, ±Infinity, subnormals, wrong types). Bias generators
+  toward rare-but-legal cases (exactly the end, sub-frame gaps) and check
+  coverage with `fc.statistics` in a scratch run.
+- **Both directions.** For parsers and validators, assert rejection of
+  near-valid input, not just acceptance of valid input.
+- **One contract per test, exact where the contract is exact.** A tolerance
+  must be derived from the contract (e.g. subnormal step, one rounding);
+  never widen one, narrow a generator or skip a test after watching it fail.
+  A failing property is a finding: fix the code or the documented contract.
+- **Pin regressions** as fast-check `examples`, and delete example tests a
+  property fully subsumes.
+- **Prove each property can fail**: plant the bug it targets, watch it go
+  red, restore.
+
 ## Real-pixel tests (Playwright)
 
 `tests/visual/garden.spec.ts` runs the **built IIFE bundle** in real Chromium
