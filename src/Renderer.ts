@@ -31,6 +31,7 @@ export class Renderer {
 
   // Tracks whether an unparseable fadeColor has been reported (warn once)
   private warnedInvalidFadeColor = false;
+  private rejectedFadeColor: string | null = null;
 
   // Cached fade gradient state (avoid re-creating gradient + strings every frame)
   private fadeGradientCache: {
@@ -172,7 +173,7 @@ export class Renderer {
   }
 
   /**
-   * Parse any CSS color the canvas accepts into RGBA. Hex is parsed
+   * Parse hex, named, RGB and HSL colors the canvas normalizes into RGBA. Hex is parsed
    * directly; anything else (named, rgb(), hsl(), ...) is normalized by the
    * 2D context, which ignores invalid assignments — so an unchanged
    * fillStyle across two different sentinels means the color was rejected.
@@ -227,13 +228,15 @@ export class Renderer {
       cache.width !== this.width ||
       cache.height !== this.height
     ) {
+      if (this.rejectedFadeColor === fadeColor) return;
       const rgba = this.parseFadeColor(fadeColor);
       if (!rgba) {
+        this.rejectedFadeColor = fadeColor;
         // Don't silently disable the fade the user asked for
         if (!this.warnedInvalidFadeColor) {
           this.warnedInvalidFadeColor = true;
           console.warn(
-            `Garten: fadeColor ${JSON.stringify(fadeColor)} is not a valid CSS color; the fade effect is disabled.`
+            `Garten: fadeColor ${JSON.stringify(fadeColor)} is invalid or uses unsupported color syntax; the fade effect is disabled.`
           );
         }
         return;
@@ -330,6 +333,7 @@ export class Renderer {
     // Invalidate cached gradient when options change
     this.fadeGradientCache = null;
     this.warnedInvalidFadeColor = false;
+    this.rejectedFadeColor = null;
 
     // Update canvas style if z-index or opacity changed
     this.canvas.style.zIndex = String(options.zIndex);

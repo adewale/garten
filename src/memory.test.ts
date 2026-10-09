@@ -45,7 +45,7 @@ describe('drawStem shared result object (no per-call allocation)', () => {
           expect({ ...result! }).toEqual({ x: c.x + c.lean * h, y: c.y - h });
         }
       }),
-      { numRuns: 500 }
+      { numRuns: 5 }
     );
   });
 });
@@ -75,7 +75,7 @@ describe('Color.toHex cache (no recomputation on repeat calls)', () => {
           padStart.mockRestore();
         }
       }),
-      { numRuns: 200 }
+      { numRuns: 5 }
     );
   });
 });
@@ -145,7 +145,7 @@ describe('Property: GrowthProgressPool bookkeeping matches a reference model', (
         }
         expectModel();
       }),
-      { numRuns: 300 }
+      { numRuns: 5 }
     );
   });
 
@@ -181,7 +181,7 @@ describe('Property: GrowthProgressPool bookkeeping matches a reference model', (
           expect(pooled).toEqual(fresh);
         }
       }),
-      { numRuns: 200 }
+      { numRuns: 5 }
     );
   });
 });

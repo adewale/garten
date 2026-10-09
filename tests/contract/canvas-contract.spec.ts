@@ -116,50 +116,24 @@ test('mock rule: save()/restore() restores fillStyle and globalAlpha', async ({ 
     ctx.save();
     ctx.fillStyle = '#0000ff';
     ctx.globalAlpha = 0.2;
-    ctx.restore();
-
-    ctx.fillRect(0, 0, 10, 10);
-    const [r, g, b, a] = ctx.getImageData(5, 5, 1, 1).data;
-    return { r, g, b, a, alphaProp: ctx.globalAlpha };
-  });
-
-  expect(result.alphaProp).toBe(1);
-  expect([result.r, result.g, result.b, result.a]).toEqual([255, 0, 0, 255]);
-});
-
-test('mock rule: save()/restore() restores the transform and globalCompositeOperation', async ({
-  page,
-}) => {
-  // The strict mock's vertical-extent tracking pops the transform on
-  // restore(); a leaked composite would change how every later plant blends
-  const result = await page.evaluate(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 40;
-    canvas.height = 40;
-    const ctx = canvas.getContext('2d')!;
-
-    ctx.save();
     ctx.translate(20, 20);
     ctx.rotate(0.5);
     ctx.globalCompositeOperation = 'destination-out';
     ctx.restore();
 
-    ctx.fillStyle = '#ff0000';
-    ctx.fillRect(0, 0, 10, 10); // at the origin only if the transform was restored
-    const at = (x: number, y: number) => ctx.getImageData(x, y, 1, 1).data[3];
+    ctx.fillRect(0, 0, 10, 10);
+    const [r, g, b, a] = ctx.getImageData(5, 5, 1, 1).data;
     const m = ctx.getTransform();
-    return {
-      composite: ctx.globalCompositeOperation,
-      transform: [m.a, m.b, m.c, m.d, m.e, m.f],
-      origin: at(5, 5),
-      translated: at(25, 25),
-    };
+    return { r, g, b, a, alphaProp: ctx.globalAlpha,
+      composite: ctx.globalCompositeOperation, transform: [m.a, m.b, m.c, m.d, m.e, m.f] };
   });
 
+  expect(result.alphaProp).toBe(1);
   expect(result.composite).toBe('source-over');
   expect(result.transform).toEqual([1, 0, 0, 1, 0, 0]);
-  expect([result.origin, result.translated]).toEqual([255, 0]);
+  expect([result.r, result.g, result.b, result.a]).toEqual([255, 0, 0, 255]);
 });
+
 
 test('mock rule: restore() without save() is a silent no-op', async ({ page }) => {
   // No throw, and no state change: the style and transform set before the

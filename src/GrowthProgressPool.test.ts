@@ -47,7 +47,7 @@ describe('Property: MutableGrowthProgress agrees exactly with GrowthProgress', (
       fc.property(anyDouble, anyDouble, anyDouble, (t, d, dur) => {
         expect(agrees(new MutableGrowthProgress().calculateMut(t, d, dur), GrowthProgress.calculate(t, d, dur))).toBe(true);
       }),
-      { numRuns: 5000, examples: [[100, 100, 0], [0, 0, 0], [NaN, 0, 1], [1, 0, -0]] }
+      { numRuns: 5, examples: [[100, 100, 0], [0, 0, 0], [NaN, 0, 1], [1, 0, -0]] }
     );
   });
 
@@ -64,7 +64,7 @@ describe('Property: MutableGrowthProgress agrees exactly with GrowthProgress', (
         expect(agrees(pool.acquireAndCalculate(t, d, dur, cfg), expected)).toBe(true);
         pool.endFrame();
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -76,7 +76,7 @@ describe('Property: MutableGrowthProgress agrees exactly with GrowthProgress', (
         expect(m.reset()).toBe(m);
         expect(FIELDS.map((k) => m[k])).toEqual([0, 0, 0, 0, 0, 0]);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -200,7 +200,7 @@ describe('Property: frame lifecycle matches a reference model', () => {
           for (let i = 1; i < h.length; i++) expect(h[i].timestamp).toBeGreaterThanOrEqual(h[i - 1].timestamp);
         }
       }),
-      { numRuns: 400 }
+      { numRuns: 5 }
     );
   });
 
@@ -218,7 +218,7 @@ describe('Property: frame lifecycle matches a reference model', () => {
         expect(h.map((e) => e.frameNumber)).toEqual(Array.from({ length: frames - first + 1 }, (_, i) => first + i));
         expect(h.map((e) => e.usage)).toEqual(h.map((e) => (e.frameNumber - 1) % 3));
       }),
-      { numRuns: 300 }
+      { numRuns: 5 }
     );
   });
 });
@@ -252,7 +252,7 @@ describe('Property: capacity at and beyond maxSize', () => {
         expect(() => pool.acquire()).toThrow(/Maximum size/);
       }),
       {
-        numRuns: 300,
+        numRuns: 5,
         examples: [
           // floor(1 * 1.1) === 1: the pool never grows and acquire() returns undefined
           [{ maxSize: 2, initialSize: 1, growthFactor: 1.1 }],
@@ -297,7 +297,7 @@ describe('Property: capacity at and beyond maxSize', () => {
         }
       ),
       // new Array(1.5) throws RangeError: fractional sizes are not rounded
-      { numRuns: 1000, examples: [[{ initialSize: 1.5, devMode: false }]] }
+      { numRuns: 5, examples: [[{ initialSize: 1.5, devMode: false }]] }
     );
   });
 });

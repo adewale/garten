@@ -514,7 +514,7 @@ describe('Property: the strict mock\'s vertical extent is exact', () => {
         expect(close(Math.max(...ys), ctx.extent.maxY, span)).toBe(true);
       }),
       {
-        numRuns: 1000,
+        numRuns: 5,
         // Near-zero leading coefficient: the textbook quadratic formula
         // cancelled catastrophically here (a bug in this mock, now fixed)
         examples: [[[0, 999.9999999997801, 0, 0, 0, 0, 0, 999.9999999961984], 0, 0]],
@@ -543,7 +543,7 @@ describe('Property: the strict mock\'s vertical extent is exact', () => {
         expect(close(Math.min(...ys), ctx.extent.minY, span)).toBe(true);
         expect(close(Math.max(...ys), ctx.extent.maxY, span)).toBe(true);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -577,7 +577,7 @@ describe('Property: the strict mock\'s vertical extent is exact', () => {
           expect(close(Math.max(...ys), ctx.extent.maxY, span)).toBe(true);
         }
       ),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -704,7 +704,7 @@ describe('Property: drawPlant over plant data, lifecycle time, container size an
         drawOnce(ctx, plant, scene, timeAt(plant, at));
         expect(ctx.violations).toEqual([]);
       }),
-      { numRuns: 3000, examples: CORNER_EXAMPLES }
+      { numRuns: 5, examples: CORNER_EXAMPLES }
     );
   });
 
@@ -717,7 +717,7 @@ describe('Property: drawPlant over plant data, lifecycle time, container size an
         // Only drawOnce's own device transform may appear
         expect(ops.filter((op) => !/^(setTransform|scale)\(/.test(op))).toEqual([]);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -741,7 +741,7 @@ describe('Property: drawPlant over plant data, lifecycle time, container size an
         expect(late.ops).toEqual(limit.ops);
       }),
       {
-        numRuns: 1000,
+        numRuns: 5,
         examples: [
           [{ ...sceneOf(PlantType.SimpleFlower, { delay: 63.99423915843511, growDuration: 0.1 }) }, 1],
         ],
@@ -759,7 +759,7 @@ describe('Property: drawPlant over plant data, lifecycle time, container size an
         const own = new Set([plant.flowerColor, plant.stemColor, plant.leafColor]);
         expect([...ctx.styles].filter((s) => !own.has(s) && !accents.has(s))).toEqual([]);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 });

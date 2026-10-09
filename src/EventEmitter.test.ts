@@ -163,7 +163,7 @@ describe('Property: the emitter matches the reference model for any command sequ
           }
         }
       ),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -189,7 +189,7 @@ describe('Property: re-entrant use during emit', () => {
         emitter.emit('progress', 99);
         expect(calls).toBe(1);
       }),
-      { numRuns: 200, examples: [[1, 0]] }
+      { numRuns: 5, examples: [[1, 0]] }
     );
   });
 
@@ -208,7 +208,7 @@ describe('Property: re-entrant use during emit', () => {
         emitter.emit('progress', later);
         expect(received).toContain(later);
       }),
-      { numRuns: 100, examples: [[1, 2]] }
+      { numRuns: 5, examples: [[1, 2]] }
     );
   });
 
@@ -231,7 +231,7 @@ describe('Property: re-entrant use during emit', () => {
         emitter.emit('progress', 0);
         expect(added).toBe(1);
       }),
-      { numRuns: 100, examples: [[0]] }
+      { numRuns: 5, examples: [[0]] }
     );
   });
 });

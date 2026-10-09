@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   measured down from the `maxHeight` line; plants blend into `fadeColor`,
   fully at the `maxHeight` line and not at all at the bottom of the zone.
   Only drawn pixels are tinted, so a transparent canvas stays transparent.
-  `fadeColor` accepts any CSS color, and a fully transparent one
+  `fadeColor` accepts hex, named, RGB and HSL colors, and a fully transparent one
   (`'transparent'`) fades plants out to transparent instead. Anything a
   browser would not accept as a color (including hex without `#`, such as
   `'abc'`) logs one warning and disables the fade. Previously the zone
@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overshot it), `fadeColor` was ignored (the fade erased to transparent),
   non-hex colors disabled it, and with an opaque `background` it cut a
   transparent band through the background.
+  Wide-gamut `color()`, `lab()` and `oklch()` syntax remains unsupported;
+  rejected colors are cached rather than reparsed on every frame.
 - **`maxHeight` now caps every plant's stem height.** Each plant's height is
   clamped so that height × its variation's `heightMultiplier` never exceeds
   `maxHeight` (flower heads, spikes and plumes can still rise above it). Before, about 3-4% of a default garden's plants were drawn
@@ -100,15 +102,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Testing
 
-- The 12 defect-reintroduction probes are committed in
-  `scripts/defect-probes/` (`npm run test:probes`) and run in CI by
-  `.github/workflows/probes.yml` on PRs and pushes to main that touch the
-  code, tests, probes or test configs
+- Property contracts replace weaker examples with bounded campaigns and
+  pinned regressions; no defect-replay workflow or mutation-testing
+  expansion is added.
+- `SeededRandom.skip` retains constant-time numeric advancement and rejects
+  invalid counts; malformed decimal alpha tokens no longer parse as colours.
 - Mutation testing is now on demand only (`workflow_dispatch` on `ci.yml`);
   the weekly scheduled run listed under 1.1.0 was removed after re-scoring
   unchanged `main` with the same result every week. Stryker is now an
   occasional audit tool rather than a gate, so its `break` threshold stays
-  unset; the defect probes are the per-change gate
+  unset; the existing verification and Chromium jobs are the per-change gates
 - Category-registry tests: every `PlantType` is grown through exactly one
   public category filter, and each category name grows the plant it is
   named for

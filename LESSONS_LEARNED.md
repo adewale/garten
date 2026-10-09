@@ -194,3 +194,34 @@ The first lifecycle command model replaced `requestAnimationFrame` with a stub t
 **Lesson:** a test double for a scheduler must model the scheduler's observable semantics. Queue callbacks, advance a monotonic clock explicitly, and assert the state after each executed callback. Also include a command that crosses an important boundary when executed; `maxCommands` is only an upper bound and random frame advances do not guarantee that completion is reached. A generated command is not guaranteed to be selected or executable in every campaign.
 
 `src/Garden.lifecycle.property.test.ts` is the enforcing mechanism. It runs the real controller against a controllable RAF queue, models elapsed time and the single-active-frame invariant, exercises looping and non-looping gardens separately, and includes both incremental `AdvanceFrame` and boundary-crossing `AdvancePastEnd` commands. Removing the production speed multiplier makes the property shrink to `[play,setSpeed(2),advanceFrame(17ms)]`. Independent mutation probes also reject broken loop reset, lost pause position and missing RAF cancellation on destroy.
+
+## 22. Stronger Contracts Must Fit the Existing Cost Budget
+
+Replacing weak examples with precise properties initially expanded the random
+campaign from approximately 4,550 to 306,096 runs. A smaller test count hid the
+extra work. The review also found that making `skip(n)` emulate every draw
+changed a constant-time operation into an unbounded loop, including a hang for
+`Infinity`.
+
+**Lesson:** assess generated work and algorithmic complexity, not test counts.
+Explicit five-run campaigns bound random contracts while retaining pinned
+regressions and the merged lifecycle budget. `SeededRandom.skip` validates its
+count and advances numeric state in constant time; its existing property pins
+that contract. Historical audit results remain documentation, not a new replay
+job, timer or mutation-testing gate.
+
+An anchored colour regex still accepted `rgba(1, 2, 3, .)` because `[\d.]+`
+is not a number grammar; constructor fallback then disguised the parse failure
+as an opaque colour. The existing reject-direction test now pins malformed
+numeric alpha tokens, and `Color.parse` validates the complete numeric token.
+
+Normalising an initial RNG seed was also insufficient: a state just below
+2^53 reached the stuck boundary after a few draws. The bounded-draw collection
+property reproduced this at seed 9007199254740989. Both RNG entry points now
+wrap on reaching that boundary; ordinary garden seeds and their outputs are
+unchanged. The existing property keeps the adjacent-boundary regression.
+
+Finally, a browser accepted `color(display-p3 1 0 0)` while the fade parser
+rejected its normalised representation. The documentation now lists the
+supported hex/named/RGB/HSL subset, and rejected fade colours are cached so an
+unsupported option does not add parsing work on every frame.

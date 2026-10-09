@@ -131,7 +131,7 @@ Only `container` is required. Everything else has sensible defaults.
 | `opacity` | `number` | `1` | Global opacity (0-1) |
 | `zIndex` | `number` | `-1` | CSS z-index for canvas |
 | `fadeHeight` | `number` | `0` | Height of the fade zone as a fraction of container height (0-1), measured down from the `maxHeight` line |
-| `fadeColor` | `string` | `'#ffffff'` | Any CSS color the plants blend into at the top of the fade zone (match your page background); `'transparent'` fades plants out instead |
+| `fadeColor` | `string` | `'#ffffff'` | Hex, named, `rgb()`/`rgba()` or `hsl()`/`hsla()` color the plants blend into at the top of the fade zone; `'transparent'` fades plants out instead |
 
 **Performance:**
 
@@ -166,8 +166,9 @@ categories more weight.
 (measured down from the `maxHeight` line) blends plants into `fadeColor`:
 fully `fadeColor` at the `maxHeight` line, no effect at the bottom of the
 zone. Only drawn pixels are tinted, so a transparent canvas stays
-transparent. `fadeColor` accepts any CSS color (hex, named, `rgb()`,
-`hsl()`, ...). A fully transparent color such as `'transparent'` fades
+transparent. `fadeColor` accepts hex, named, `rgb()`/`rgba()` and
+`hsl()`/`hsla()` colors. Wide-gamut `color()`, `lab()` and `oklch()` syntax
+is not supported. A fully transparent color such as `'transparent'` fades
 plants out to transparent instead, which works best with the default
 transparent background. An unparseable `fadeColor` logs one warning and
 disables the fade.

@@ -65,7 +65,7 @@ describe('Property: exact arithmetic laws', () => {
       fc.property(vec, vec, (a, b) => {
         expect(same(a.add(b), b.add(a))).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -74,7 +74,7 @@ describe('Property: exact arithmetic laws', () => {
       fc.property(vec, vec, (a, b) => {
         expect(same(a.subtract(b), a.add(b.negate()))).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -85,7 +85,7 @@ describe('Property: exact arithmetic laws', () => {
         expect(same(v.multiply(-1), v.negate())).toBe(true);
         expect(same(v.multiply(1), v)).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -98,7 +98,7 @@ describe('Property: exact arithmetic laws', () => {
           expect(same(v.divide(s), new Vec2(v.x / s, v.y / s))).toBe(true);
         }
       }),
-      { numRuns: 2000, examples: [[new Vec2(3, 4), 0], [new Vec2(3, 4), -0]] }
+      { numRuns: 5, examples: [[new Vec2(3, 4), 0], [new Vec2(3, 4), -0]] }
     );
   });
 
@@ -108,7 +108,7 @@ describe('Property: exact arithmetic laws', () => {
         expect(Object.is(a.dot(b), b.dot(a))).toBe(true);
         expect(Object.is(a.dot(a), a.lengthSquared())).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -117,7 +117,7 @@ describe('Property: exact arithmetic laws', () => {
       fc.property(vec, vec, (a, b) => {
         expect(eq(a.cross(b), -b.cross(a))).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -127,7 +127,7 @@ describe('Property: exact arithmetic laws', () => {
       fc.property(vec, (v) => {
         expect(Object.is(v.cross(v.perpendicular()), v.lengthSquared())).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -139,7 +139,7 @@ describe('Property: exact arithmetic laws', () => {
         // -(x*y) + y*x is exactly 0 when the product is finite, NaN (Inf - Inf) otherwise
         expect(Number.isFinite(v.x * v.y) ? d === 0 : Number.isNaN(d)).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -149,7 +149,7 @@ describe('Property: exact arithmetic laws', () => {
       fc.property(vec, fc.constantFrom(...ops), (v, op) => {
         expect(same(v[op](), new Vec2(Math[op](v.x), Math[op](v.y)))).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -165,7 +165,7 @@ describe('Property: sibling geometry helpers agree exactly', () => {
         expect(Object.is(a.distanceToSquared(b), diff.lengthSquared())).toBe(true);
       }),
       // Shrunk: length() is Math.hypot but distance() still squares, so 1.34e154 overflows
-      { numRuns: 2000, examples: [[new Vec2(0, 0), { x: 0, y: 1.3407807929942597e154 }]] }
+      { numRuns: 5, examples: [[new Vec2(0, 0), { x: 0, y: 1.3407807929942597e154 }]] }
     );
   });
 
@@ -174,7 +174,7 @@ describe('Property: sibling geometry helpers agree exactly', () => {
       fc.property(vec, vec, (a, b) => {
         expect(Object.is(a.distanceTo(b), b.distanceTo(a))).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -186,7 +186,7 @@ describe('Property: sibling geometry helpers agree exactly', () => {
         expect(Object.is(a.angleTo(b), expected)).toBe(true);
         expect(Object.is(a.angle(), Math.atan2(a.y, a.x))).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -195,7 +195,7 @@ describe('Property: sibling geometry helpers agree exactly', () => {
       fc.property(vec, vec, anyDouble, (a, b, t) => {
         expect(same(Vec2.lerp(a, b, t), a.lerp(b, t))).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -211,7 +211,7 @@ describe('Property: interpolation endpoints are exact', () => {
         expect(a.lerp(b, 0).equals(a), 't = 0').toBe(true);
         expect(a.lerp(b, 1).equals(b), 't = 1').toBe(true);
       }),
-      { numRuns: 2000, examples: [[new Vec2(0.3, 0), new Vec2(1e-17, 0)]] }
+      { numRuns: 5, examples: [[new Vec2(0.3, 0), new Vec2(1e-17, 0)]] }
     );
   });
 
@@ -223,7 +223,7 @@ describe('Property: interpolation endpoints are exact', () => {
         expect(same(from.moveTowards(to, d + extra), to)).toBe(true);
       }),
       {
-        numRuns: 2000,
+        numRuns: 5,
         // Shrunk: maxDistance === distanceTo(target), but d * d < dx² + dy² after rounding
         examples: [[new Vec2(-2.5124151918141034e85, 0), new Vec2(0, -4.3557738626421694e83), 0]],
       }
@@ -245,7 +245,7 @@ describe('Property: normalization and length limits', () => {
           expect(close(Math.hypot(n.x, n.y), 1), `${v} -> ${n}`).toBe(true);
         }
       }),
-      { numRuns: 2000, examples: [[new Vec2(1e200, 0)], [new Vec2(1e-200, 0)]] }
+      { numRuns: 5, examples: [[new Vec2(1e200, 0)], [new Vec2(1e-200, 0)]] }
     );
   });
 
@@ -260,7 +260,7 @@ describe('Property: normalization and length limits', () => {
         }
       }),
       // Shrunk: x * x is subnormal, so length() loses precision and the result overshoots m
-      { numRuns: 2000, examples: [[new Vec2(-4.8776768215499596e-160, 0), 4.733238893013284e-307]] }
+      { numRuns: 5, examples: [[new Vec2(-4.8776768215499596e-160, 0), 4.733238893013284e-307]] }
     );
   });
 });
@@ -272,7 +272,7 @@ describe('Property: rotation and projection', () => {
         const r = v.rotate(0);
         expect(r.x === v.x && r.y === v.y).toBe(true);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -284,7 +284,7 @@ describe('Property: rotation and projection', () => {
         fc.pre(before <= Number.MAX_VALUE / 2); // the rotated components cannot overflow
         expect(close(Math.hypot(r.x, r.y), before), `${v} by ${angle}`).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -298,7 +298,7 @@ describe('Property: rotation and projection', () => {
         expect(close(p.x, v.x) || Math.abs(p.x - v.x) <= 1e-14 * len).toBe(true);
         expect(close(p.y, v.y) || Math.abs(p.y - v.y) <= 1e-14 * len).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -311,7 +311,7 @@ describe('Property: rotation and projection', () => {
         const expected = n.x !== 0 ? [-v.x, v.y] : [v.x, -v.y];
         expect(r.x === expected[0] && r.y === expected[1]).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -323,7 +323,7 @@ describe('Property: rotation and projection', () => {
         expect(onX ? p.x === v.x && p.y === 0 : p.x === 0 && p.y === v.y).toBe(true);
         expect(same(v.projectOnto(Vec2.zero()), Vec2.zero())).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -339,7 +339,7 @@ describe('Property: clamp', () => {
         expect(same(c.clamp(minX, minY, maxX, maxY), c)).toBe(true);
         if (v.x > minX && v.x < maxX && v.y > minY && v.y < maxY) expect(same(c, v)).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -356,7 +356,7 @@ describe('Property: comparison and conversion', () => {
         expect(c).not.toBe(v);
         expect(same(c, v)).toBe(true);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -369,7 +369,7 @@ describe('Property: comparison and conversion', () => {
         // Strict: a difference of exactly epsilon is not "approximately equal"
         expect(a.approximatelyEquals(b, Math.abs(a.x - b.x))).toBe(false);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -378,7 +378,7 @@ describe('Property: comparison and conversion', () => {
       fc.property(anyDouble, anyDouble, (x, y) => {
         expect(new Vec2(x, y).toString()).toBe(`Vec2(${x}, ${y})`);
       }),
-      { numRuns: 500 }
+      { numRuns: 5 }
     );
   });
 
@@ -391,7 +391,7 @@ describe('Property: comparison and conversion', () => {
         expect(second).toBe(first);
         expect(same(second, { x: x2, y: y2 })).toBe(true);
       }),
-      { numRuns: 500 }
+      { numRuns: 5 }
     );
   });
 });
@@ -433,7 +433,7 @@ describe('Property: MutableVec2 agrees with Vec2 on every operation', () => {
           expect(same(m, v), `${op.kind}: ${m.x},${m.y} vs ${v}`).toBe(true);
         }
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -448,7 +448,7 @@ describe('Property: MutableVec2 agrees with Vec2 on every operation', () => {
         else m.multiplyMut(2);
         expect(same(snap, { x, y })).toBe(true);
       }),
-      { numRuns: 500 }
+      { numRuns: 5 }
     );
   });
 

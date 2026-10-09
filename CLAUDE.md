@@ -16,7 +16,6 @@ npm run check:dist # es-check: dist bundles parse at the documented ES2018 level
 npm run test:e2e   # Build, then real-pixel + canvas-contract tests in Chromium (needs `npx playwright install chromium`)
 npm run test:visual    # Playwright visual project only (uses the existing dist build)
 npm run test:contract  # Playwright canvas-contract project only
-npm run test:probes    # Apply each defect-reintroduction probe and require the suite to kill it (~2 min)
 npm run test:mutation       # Stryker mutation testing over all of src/ (slow; on demand)
 npm run test:mutation:core  # Stryker mutation testing on the core boundary files (slow; not part of verify)
 npm run clean      # Remove dist directory

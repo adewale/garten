@@ -19,11 +19,9 @@ npm run check:dist     # es-check: dist/ parses at the documented browser level
 `npm run verify` is the pre-publish gate (`prepublishOnly`).
 
 CI (`.github/workflows/ci.yml`) runs `verify` and the Chromium suites on
-every PR/push to main. `.github/workflows/probes.yml` runs the
-defect-reintroduction probes (~2 min) on PRs and pushes to main that touch
-`src/`, `tests/`, the probes, `package.json`/`package-lock.json`, the
-vitest/Stryker configs or that workflow. The scoped mutation run is on
-demand only (`workflow_dispatch` on `ci.yml`, ~10 min), uploading the HTML
+every PR/push to main. There is no additional defect-replay workflow.
+The pre-existing scoped mutation command is on demand only
+(`workflow_dispatch` on `ci.yml`, ~10 min), uploading the HTML
 report as an artifact. Perf canaries assume an uncontended runner —
 running the vitest suite while a local Stryker run saturates the CPU can
 flake them.
@@ -119,8 +117,14 @@ oracles:
   A failing property is a finding: fix the code or the documented contract.
 - **Pin regressions** as fast-check `examples`, and delete example tests a
   property fully subsumes.
-- **Prove each property can fail**: plant the bug it targets, watch it go
-  red, restore.
+- **Pin real regressions.** Describe the independently expected outcome and
+  keep an example for any failure found during ordinary development. This
+  change adds no mutation campaign or defect replay gate.
+- **Keep recurring cost bounded.** Rewritten properties explicitly use five
+  random runs per contract and retain explicit regression examples.
+  The lifecycle model merged in #2 keeps its existing 100 runs. The aggregate
+  randomized budget stays below the previous suite rather than multiplying
+  the budget when one broad test is replaced by several precise contracts.
 
 ## Real-pixel tests (Playwright)
 
@@ -177,32 +181,16 @@ The suite's strength is verified, not assumed:
   mutates the options/palette/growth/generation boundary files and runs the
   vitest suite per mutant (`coverageAnalysis: perTest`, incremental cache in
   `reports/stryker-incremental.json`); `npm run test:mutation` covers all of
-  `src/`. Stryker runs `vitest.stryker.config.ts`, which is the normal suite
-  minus the wall-clock perf canaries: instrumentation slows the mutated
-  files several-fold, so the ops/sec floors can fail the initial dry run on
-  a loaded machine (seen locally; not observed on ubuntu-latest, where 16/16
-  weekly dry runs with the canaries passed). Baseline, scores, and how to
+  `src/`. Its configuration remains unchanged from main. Baseline, scores, and how to
   read survivors (tuning constants vs real assertion gaps):
   `docs/test-suite-benchmark-2026-06.md` §5c. Run it
   after substantial suite or boundary changes — it is too slow for the
   per-commit `verify` gate. When a survivor exposes a real gap, kill it with
   a *class-level* assertion (e.g. the color well-formedness constraint), not
   a mutant-shaped one.
-- **Defect-reintroduction probes**: the 12 historical defects from the June
-  2026 audit are committed as patches in `scripts/defect-probes/`
-  (`P01`–`P12`, one per defect in table 1 of
-  `docs/test-suite-benchmark-2026-06.md`). `npm run test:probes` applies each
-  one to a disposable worktree of `HEAD`, runs the vitest suite (minus the
-  wall-clock perf canaries), and exits non-zero unless the unpatched suite
-  passes and **every** probe is killed. CI runs it on every PR and push to
-  main that touches the code, the suite, the probes or the test configs
-  (`probes.yml`, ~2 min), so a change that stops killing a previously
-  shipped defect fails its PR.
-  Current kill rate: 12/12 (the v1.0.3 suite scored 0/12 — every defect
-  shipped under green). The probes remain the curated, fast complement to
-  Stryker: they encode *real shipped bugs* rather than synthetic operators.
-  If a refactor makes a patch stop applying, the runner reports it as STALE:
-  re-express the same defect against the new code rather than deleting it.
+- **Historical measurements**: `docs/test-suite-benchmark-2026-06.md` records
+  the June audit. Those results are historical evidence, not a recurring gate
+  or a claim that the current revision was mutation-tested.
 - When fixing any bug: write the failing test first (red), fix (green), and
   ask which *class* the bug belongs to — then add the class-level net
   (property, invariant, or sweep), not just the instance-level regression.
@@ -224,10 +212,9 @@ The suite's strength is verified, not assumed:
   score (local runs on a loaded machine also inflate it: Stryker counts
   timeouts as detected; a 2026-09 local run with 23 timeouts scored 75.75%
   against CI's 73.86% with 3–5). The per-change guarantees come from the
-  defect probes and from planting each new test's bug before trusting it.
+  ordinary regression contracts and the existing browser checks.
 - Property tests and fuzzing cover inputs, not oracles: the properties
   "monotone and bounded" held for the inverted timing curves too, so they
   never caught the inversion.
   Prefer properties that pin the right answer (inverses, comparison with a
-  simple reference, exact fallback values), and check each one fails on a
-  planted bug.
+  simple reference, exact fallback values), with concrete regression inputs.

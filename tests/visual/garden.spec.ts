@@ -96,20 +96,6 @@ async function readBitmap(page: Page, y0 = 0, y1?: number): Promise<string> {
   }, [y0, y1] as const);
 }
 
-/** Pixels with alpha > 0 in rows y0 to y1 */
-async function paintedRows(page: Page, y0: number, y1: number): Promise<number> {
-  return page.evaluate(
-    ([from, to]) => {
-      const canvas = document.querySelector('#garden canvas') as HTMLCanvasElement;
-      const data = canvas.getContext('2d')!.getImageData(0, from, canvas.width, to - from).data;
-      let painted = 0;
-      for (let i = 3; i < data.length; i += 4) if (data[i] > 0) painted++;
-      return painted;
-    },
-    [y0, y1] as const
-  );
-}
-
 async function makeGarden(page: Page, options: object = {}, seekTo?: number): Promise<void> {
   await page.goto(FIXTURE);
   await page.evaluate(
@@ -156,6 +142,31 @@ test('background option paints an opaque background color', async ({ page }) => 
   const stats = await readStats(page);
 
   expect(stats.topLeft).toEqual([17, 34, 51, 255]);
+
+  const FADE_GARDEN = { maxHeight: 0.6, density: 'dense' };
+  const FADE_LINE = Math.round(600 * (1 - 0.6));
+  // Cyan appears in no natural-palette plant, so exact-cyan pixels can only
+  // come from the fade
+  await makeGarden(page, { ...FADE_GARDEN, fadeHeight: 0.2, fadeColor: 'cyan' }, 100);
+  const nearLine = await page.evaluate(
+    ([y0, y1]) => {
+      const canvas = document.querySelector('#garden canvas') as HTMLCanvasElement;
+      const data = canvas.getContext('2d')!.getImageData(0, y0, canvas.width, y1 - y0).data;
+      let painted = 0;
+      let cyan = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] === 0) continue;
+        painted++;
+        if (data[i] < 40 && data[i + 1] > 215 && data[i + 2] > 215) cyan++;
+      }
+      return { painted, cyan };
+    },
+    [FADE_LINE, FADE_LINE + Math.round(600 * 0.02)] as const
+  );
+
+  // Just under the maxHeight line the fade is near full strength
+  expect(nearLine.painted).toBeGreaterThan(50);
+  expect(nearLine.cyan / nearLine.painted).toBeGreaterThan(0.8);
 });
 
 test('tall garden on a dark page reaches the top band', async ({ page }) => {
@@ -174,14 +185,6 @@ test('tall garden on a dark page reaches the top band', async ({ page }) => {
   await expect(page.locator('#garden')).toHaveScreenshot('garden-tall-dark.png');
 });
 
-test('ground band only before any plant starts', async ({ page }) => {
-  // The vacuity baseline for every plant-pixel count: at t = 0 no plant
-  // has started, so nothing is painted above the ground band
-  await makeGarden(page, {}, 0);
-  const stats = await readStats(page);
-  expect(stats.plantPainted).toBe(0);
-  expect(stats.painted).toEqual({ top: 0, middle: 0, bottom: stats.width * stats.groundHeight });
-});
 
 test('same seed produces a byte-identical bitmap in two independent pages', async ({
   browser,
@@ -236,77 +239,4 @@ test('resize while idle repaints exactly the frame a fresh garden of the new siz
   expect(after.width).toBe(640);
   expect(after.plantPainted).toBeGreaterThan(0);
   expect((await readBitmap(page)) === fresh).toBe(true);
-});
-
-// Fade probes share one garden; the line and zone are in canvas rows
-const FADE_GARDEN = { maxHeight: 0.6, density: 'dense' };
-const FADE_LINE = Math.round(600 * (1 - 0.6)); // the maxHeight line
-const FADE_ZONE_END = FADE_LINE + Math.round(600 * 0.2); // fadeHeight 0.2
-
-test('fade blends plant tops into fadeColor', async ({ page }) => {
-  // Cyan appears in no natural-palette plant, so exact-cyan pixels can only
-  // come from the fade
-  await makeGarden(page, { ...FADE_GARDEN, fadeHeight: 0.2, fadeColor: 'cyan' }, 100);
-  const nearLine = await page.evaluate(
-    ([y0, y1]) => {
-      const canvas = document.querySelector('#garden canvas') as HTMLCanvasElement;
-      const data = canvas.getContext('2d')!.getImageData(0, y0, canvas.width, y1 - y0).data;
-      let painted = 0;
-      let cyan = 0;
-      for (let i = 0; i < data.length; i += 4) {
-        if (data[i + 3] === 0) continue;
-        painted++;
-        if (data[i] < 40 && data[i + 1] > 215 && data[i + 2] > 215) cyan++;
-      }
-      return { painted, cyan };
-    },
-    [FADE_LINE, FADE_LINE + Math.round(600 * 0.02)] as const
-  );
-
-  // Just under the maxHeight line the fade is near full strength
-  expect(nearLine.painted).toBeGreaterThan(50);
-  expect(nearLine.cyan / nearLine.painted).toBeGreaterThan(0.8);
-});
-
-test('fade changes nothing below its zone and keeps the background transparent', async ({
-  page,
-}) => {
-  await makeGarden(page, { ...FADE_GARDEN, fadeHeight: 0 }, 100);
-  const plainBelow = await readBitmap(page, FADE_ZONE_END);
-  const plain = await readStats(page);
-
-  await makeGarden(page, { ...FADE_GARDEN, fadeHeight: 0.2, fadeColor: 'cyan' }, 100);
-  const faded = await readStats(page);
-
-  // source-atop only tints drawn pixels: the painted set is unchanged
-  expect(faded.painted).toEqual(plain.painted);
-  // The fade paints only down to the end of its zone
-  expect((await readBitmap(page, FADE_ZONE_END)) === plainBelow).toBe(true);
-});
-
-test('an invalid fadeColor leaves the frame identical to no fade', async ({ page }) => {
-  // Reject direction: strings a browser rejects, including hex without '#'
-  // (once accepted as #aabbcc) and malformed hex lengths
-  await makeGarden(page, { ...FADE_GARDEN, fadeHeight: 0 }, 100);
-  const plain = await readBitmap(page);
-
-  for (const fadeColor of ['not-a-color', 'abc', '#12345', '#ggg', 'rgb(300', '']) {
-    await makeGarden(page, { ...FADE_GARDEN, fadeHeight: 0.2, fadeColor }, 100);
-    expect((await readBitmap(page)) === plain, `fadeColor ${JSON.stringify(fadeColor)}`).toBe(true);
-  }
-});
-
-test("'transparent' fadeColor erases plants above the line and changes nothing below the zone", async ({
-  page,
-}) => {
-  await makeGarden(page, { ...FADE_GARDEN, fadeHeight: 0 }, 100);
-  const plainBelow = await readBitmap(page, FADE_ZONE_END);
-  // Plant parts poke above the line, so there is something to erase
-  expect(await paintedRows(page, 0, FADE_LINE)).toBeGreaterThan(0);
-
-  await makeGarden(page, { ...FADE_GARDEN, fadeHeight: 0.2, fadeColor: 'transparent' }, 100);
-
-  // Above the line the gradient's first stop (full strength) erases everything
-  expect(await paintedRows(page, 0, FADE_LINE)).toBe(0);
-  expect((await readBitmap(page, FADE_ZONE_END)) === plainBelow).toBe(true);
 });

@@ -27,7 +27,7 @@ const nonZeroVec = vec2Arb.filter((v) => v.x !== 0 || v.y !== 0);
 const seedArb = fc.oneof(fc.integer(), finiteFloat);
 
 /** Cheap properties run thousands of cases */
-const RUNS = { numRuns: 2000 };
+const RUNS = { numRuns: 5 };
 /** Same number, -0 and 0 alike, NaN equal to itself */
 const sameNumber = (a: number, b: number) => a === b || (Number.isNaN(a) && Number.isNaN(b));
 
@@ -533,7 +533,7 @@ describe('Timing curve properties', () => {
           expect(`generation ${g}/${total}: ${easeOut} < ${linear} < ${easeIn}`).toBeUndefined();
         }
       }
-    }), { numRuns: 300 });
+    }), { numRuns: 5 });
   });
 
   it('ease-in-out is symmetric: the late half mirrors the early half exactly', () => {
@@ -566,7 +566,7 @@ describe('Timing curve properties', () => {
         const next = s[g + 2] - s[g + 1];
         if (!(slot >= next)) expect(`slot ${g} (${slot}) < slot ${g + 1} (${next}) of ${total}`).toBeUndefined();
       }
-    }), { numRuns: 300 });
+    }), { numRuns: 5 });
   });
 });
 

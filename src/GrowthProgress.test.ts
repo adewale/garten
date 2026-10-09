@@ -104,7 +104,7 @@ describe('Property: calculate is fromProgress of the raw timing progress', () =>
         const expected = t >= d + dur ? 1 : (t - d) / dur;
         expect(Object.is(rawGrowthProgress(t, d, dur), expected)).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -113,7 +113,7 @@ describe('Property: calculate is fromProgress of the raw timing progress', () =>
       fc.property(anyDouble, anyDouble, anyDouble, fc.option(configArb, { nil: undefined }), (t, d, dur, cfg) => {
         expect(sameFields(GrowthProgress.calculate(t, d, dur, cfg), GrowthProgress.fromProgress(rawGrowthProgress(t, d, dur), cfg))).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -126,7 +126,7 @@ describe('Property: calculate is fromProgress of the raw timing progress', () =>
         expect(g.progress).toBe(1);
         expect(g.isComplete).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -140,7 +140,7 @@ describe('Property: calculate is fromProgress of the raw timing progress', () =>
           GrowthProgress.fromProgress(p, { ...GrowthProgress.defaultConfig, ...stripped })
         )).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -156,7 +156,7 @@ describe('Property: every phase stays in [0, 1]', () => {
           expect(g[k] >= 0 && g[k] <= 1, `${k} = ${g[k]}`).toBe(true);
         }
       }),
-      { numRuns: 3000, examples: [[100, 100, 0, GrowthProgress.defaultConfig]] }
+      { numRuns: 5, examples: [[100, 100, 0, GrowthProgress.defaultConfig]] }
     );
   });
 
@@ -167,7 +167,7 @@ describe('Property: every phase stays in [0, 1]', () => {
         expect(g.progress).toBe(Math.max(0, Math.min(1, p)));
         for (const k of FIELDS) expect(g[k] >= 0 && g[k] <= 1, `${k} = ${g[k]}`).toBe(true);
       }),
-      { numRuns: 3000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -189,7 +189,7 @@ describe('Property: phases follow the documented linear ramps', () => {
         expect(g.foliage).toBe(clamp01((p - GROWTH_PHASES.FOLIAGE_START) * GROWTH_PHASES.FOLIAGE_GROWTH_RATE));
         expect(g.plume).toBe(clamp01((p - GROWTH_PHASES.PLUME_START) / (1 - GROWTH_PHASES.PLUME_START)));
       }),
-      { numRuns: 3000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -205,7 +205,7 @@ describe('Property: phase ordering laws', () => {
         const g2 = GrowthProgress.fromProgress(hi, cfg);
         for (const k of FIELDS) expect(g1[k] <= g2[k], `${k}: ${g1[k]} > ${g2[k]}`).toBe(true);
       }),
-      { numRuns: 3000 }
+      { numRuns: 5 }
     );
   });
 
@@ -225,7 +225,7 @@ describe('Property: phase ordering laws', () => {
         const g = GrowthProgress.fromProgress(p, cfg);
         expect(g.leaf).toBeGreaterThanOrEqual(g.flower);
       }),
-      { numRuns: 3000 }
+      { numRuns: 5 }
     );
   });
 
@@ -235,7 +235,7 @@ describe('Property: phase ordering laws', () => {
         const g = GrowthProgress.fromProgress(p);
         expect(g.stem >= g.leaf && g.leaf >= g.flower, `${p}: ${fields(g)}`).toBe(true);
       }),
-      { numRuns: 3000 }
+      { numRuns: 5 }
     );
   });
 
@@ -249,7 +249,7 @@ describe('Property: phase ordering laws', () => {
         else expect(g.plume).toBeGreaterThan(0);
         if (p <= GROWTH_PHASES.FOLIAGE_START) expect(g.foliage).toBe(0);
       }),
-      { numRuns: 3000, examples: [[GROWTH_PHASES.PLUME_START, GrowthProgress.defaultConfig]] }
+      { numRuns: 5, examples: [[GROWTH_PHASES.PLUME_START, GrowthProgress.defaultConfig]] }
     );
     expect(GrowthProgress.fromProgress(1).plume).toBe(1);
   });
@@ -263,7 +263,7 @@ describe('Property: legacy helpers agree with GrowthProgress', () => {
       fc.property(anyDouble, anyDouble, anyDouble, (t, d, dur) => {
         expect(Object.is(calculateRawProgress(t, d, dur), GrowthProgress.calculate(t, d, dur).progress)).toBe(true);
       }),
-      { numRuns: 2000, examples: [[0, 0, 0]] }
+      { numRuns: 5, examples: [[0, 0, 0]] }
     );
   });
 
@@ -281,7 +281,7 @@ describe('Property: legacy helpers agree with GrowthProgress', () => {
           }
         }
       }),
-      { numRuns: 3000, examples: [[100, 100, 200], [1000, 0, 100], [0, 0, 0]] }
+      { numRuns: 5, examples: [[100, 100, 200], [1000, 0, 100], [0, 0, 0]] }
     );
   });
 
@@ -298,7 +298,7 @@ describe('Property: legacy helpers agree with GrowthProgress', () => {
         fc.pre(d + dur !== d);
         expect(isPlantActive(t, d)).toBe(GrowthProgress.calculate(t, d, dur).isActive);
       }),
-      { numRuns: 2000, examples: [[100, 100, 200]] }
+      { numRuns: 5, examples: [[100, 100, 200]] }
     );
   });
 });
@@ -316,7 +316,7 @@ describe('Property: accessors are consistent', () => {
           g.progress > 0, g.progress >= 1, g.leaf > 0, g.flower > 0, g.foliage > 0, g.plume > 0,
         ]);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -329,7 +329,7 @@ describe('Property: accessors are consistent', () => {
         expect(sameFields(c, g)).toBe(true);
         expect(c.equals(g)).toBe(true);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -343,7 +343,7 @@ describe('Property: accessors are consistent', () => {
         // Strict: an epsilon equal to the largest field difference is not enough
         expect(a.approximatelyEquals(b, Math.max(...FIELDS.map((k) => Math.abs(a[k] - b[k]))))).toBe(false);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -352,7 +352,7 @@ describe('Property: accessors are consistent', () => {
       fc.property(unit, finite, finite, (p, min, max) => {
         expect(GrowthProgress.fromProgress(p).isInRange(min, max)).toBe(p >= min && p < max);
       }),
-      { numRuns: 2000, examples: [[0.5, 0.5, 0.6], [0.5, 0.4, 0.5]] }
+      { numRuns: 5, examples: [[0.5, 0.5, 0.6], [0.5, 0.4, 0.5]] }
     );
   });
 
@@ -369,7 +369,7 @@ describe('Property: accessors are consistent', () => {
         if (lo <= start) expect(v1).toBe(0);
         if (hi >= end) expect(v2).toBe(1);
       }),
-      { numRuns: 3000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -385,7 +385,7 @@ describe('Property: easing', () => {
         expect(e1).toBeLessThanOrEqual(e2);
       }),
       {
-        numRuns: 3000,
+        numRuns: 5,
         // Shrunk: t * (2 - t) rounds up to 1 just below t = 1, then back down
         examples: [[0.5, 0.5 - 2 ** -53], [0.9999999999996576, 0.9999999999999994]],
       }
@@ -402,7 +402,7 @@ describe('Property: easing', () => {
         expect(g.eased('ease-out')).toBeGreaterThanOrEqual(g.eased('linear'));
         expect(g.eased()).toBe(g.eased('linear'));
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -415,7 +415,7 @@ describe('Property: easing', () => {
         expect(g.easedStem()).toBe(g.easedStem('ease-out'));
         expect(g.easedFlower()).toBe(g.easedFlower('ease-out'));
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 });

@@ -10,7 +10,7 @@
     "!src/types.ts"
   ],
   "vitest": {
-    "configFile": "vitest.stryker.config.ts"
+    "configFile": "vitest.config.ts"
   },
   "reporters": ["clear-text", "progress", "html"],
   "htmlReporter": {

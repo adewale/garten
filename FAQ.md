@@ -47,7 +47,7 @@ new Garten({ container: '#garden', background: '#0b1020' });
 ```
 
 If you use `fadeHeight`, set `fadeColor` to match your page background so the
-fade blends correctly. `fadeColor` accepts any CSS color; `'transparent'`
+fade blends correctly. `fadeColor` accepts hex, named, RGB and HSL colors; `'transparent'`
 fades the plant tops out to transparent instead of to a color.
 
 ### Can I use Garten with React/Vue/Svelte?
@@ -353,7 +353,7 @@ Several approaches:
    new Garten({
      container: '#garden',
      fadeHeight: 0.3,      // Top 30% (of container height) below the maxHeight line fades
-     fadeColor: '#ffffff'  // Match your background color (any CSS color)
+     fadeColor: '#ffffff'  // Match your background (hex, named, RGB or HSL)
    });
    ```
 

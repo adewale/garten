@@ -459,7 +459,7 @@ export interface GardenOptions {
   fadeHeight?: number;
 
   /**
-   * Color to fade into (should match page background). Any CSS color;
+   * Color to fade into (should match page background). Hex, named, RGB or HSL;
    * a fully transparent color (e.g. 'transparent') fades plants out instead.
    * Only used when fadeHeight > 0
    * @default '#ffffff'

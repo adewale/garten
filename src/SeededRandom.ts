@@ -107,7 +107,11 @@ export class SeededRandom {
    * Generate the next random value (0-1)
    */
   next(): number {
-    return hashSeed(this._seed++);
+    const value = hashSeed(this._seed++);
+    // A legal starting state can reach the same non-advancing boundary after
+    // a few draws. Continue the modulo-2^32 stream instead of getting stuck.
+    if (this._seed === Number.MAX_SAFE_INTEGER + 1) this._seed = 0;
+    return value;
   }
 
   /**
@@ -420,8 +424,12 @@ export class SeededRandom {
    * Useful for skipping ahead in the sequence
    */
   skip(n: number): void {
-    // Same arithmetic as n calls to next(), so the two always agree
-    for (let i = 0; i < n; i++) this._seed++;
+    if (!Number.isSafeInteger(n) || n < 0) {
+      throw new RangeError('SeededRandom.skip: count must be a non-negative safe integer');
+    }
+    // Numeric state advancement remains O(1), even for a large skip. As with
+    // setSeed(), wrap oversized states so later draws continue to advance.
+    this._seed = normalizeSeed(this._seed + n);
   }
 
   /**
@@ -463,7 +471,11 @@ export function seededRandom(seed: number): number {
 export function createRandom(initialSeed: number): () => number {
   // Same normalization as SeededRandom, so the two streams agree for every seed
   let seed = normalizeSeed(initialSeed);
-  return () => seededRandom(seed++);
+  return () => {
+    const value = seededRandom(seed++);
+    if (seed === Number.MAX_SAFE_INTEGER + 1) seed = 0;
+    return value;
+  };
 }
 
 /**

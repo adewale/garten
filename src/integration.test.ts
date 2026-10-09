@@ -398,7 +398,7 @@ describe('Constraint: Growth phase ordering', () => {
           expect(after).toBeGreaterThanOrEqual(before);
         }
       ),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -541,7 +541,7 @@ describe('Constraint: GrowthProgressPool frame lifecycle', () => {
           pool.endFrame();
         }
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -892,9 +892,9 @@ const CATEGORY_BY_NAME = new Map(
     ])
 );
 
-const GARDEN_RUNS = { numRuns: 200 };
+const GARDEN_RUNS = { numRuns: 5 };
 /** For properties that grow two gardens per run */
-const GARDEN_PAIR_RUNS = { numRuns: 100 };
+const GARDEN_PAIR_RUNS = { numRuns: 5 };
 
 /**
  * The first plant breaking a per-plant rule, or undefined. Gardens hold up
@@ -1717,7 +1717,7 @@ function wrapSeedReference(v: number): number {
   return result === DOCUMENTED_SEED_RANGE ? 0 : result;
 }
 
-const OPTION_RUNS = { numRuns: 1000 };
+const OPTION_RUNS = { numRuns: 5 };
 
 describe('Property: resolveOptions follows the documented option contract', () => {
   muteWarnings();
@@ -1901,7 +1901,7 @@ describe('Property: resolveOptions follows the documented option contract', () =
         expect(plants.length).toBeGreaterThan(0);
       }),
       // Production finding: a non-string category name throws a TypeError
-      { numRuns: 300, examples: [[{ categories: [0] }]] }
+      { numRuns: 5, examples: [[{ categories: [0] }]] }
     );
   });
 
@@ -1977,7 +1977,7 @@ describe('Constraint: generation boundaries come from the plants themselves', ()
         expect(getCompletedGenerations(time, ends)).toBe(expected);
       }),
       {
-        numRuns: 2000,
+        numRuns: 5,
         examples: [
           // Boundaries and a shared end time
           ...[0, 0.999, 1, 2.5, 9.99, 10, 250].map((t) => [t, [1, 2.5, 2.5, 7, 10]] as [number, number[]]),

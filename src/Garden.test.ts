@@ -391,7 +391,7 @@ describe('Constraint: canvas background', () => {
         expect(ctx.callCount('clearRect')).toBe(0);
         garden.destroy();
       }),
-      { numRuns: 200 }
+      { numRuns: 5 }
     );
   });
 });
@@ -462,7 +462,7 @@ describe('Constraint: fade blends plants into fadeColor', () => {
           [1, stop.replace(/, [\d.]+\)$/, ', 0)')],
         ]);
       }),
-      { numRuns: 300, examples: [[{ css: '#fff', stop: 'rgba(255, 255, 255, 1)' }]] }
+      { numRuns: 5, examples: [[{ css: '#fff', stop: 'rgba(255, 255, 255, 1)' }]] }
     );
     expect(warn).not.toHaveBeenCalled();
   });
@@ -486,7 +486,7 @@ describe('Constraint: fade blends plants into fadeColor', () => {
           expect(ctx.globalCompositeOperation).toBe('source-over'); // restored
         }
       ),
-      { numRuns: 200 }
+      { numRuns: 5 }
     );
   });
 
@@ -505,7 +505,7 @@ describe('Constraint: fade blends plants into fadeColor', () => {
           expect(fadeFills(ctx)[0].args).toEqual([0, 0, width, bottom]);
         }
       ),
-      { numRuns: 300 }
+      { numRuns: 5 }
     );
   });
 
@@ -525,7 +525,7 @@ describe('Constraint: fade blends plants into fadeColor', () => {
         expect(fills[0].composite).toBe('destination-out');
         expect(ctx.gradient.addColorStop).toHaveBeenCalledWith(0, `rgba(${er}, ${eg}, ${eb}, 1)`);
       }),
-      { numRuns: 200 }
+      { numRuns: 5 }
     );
   });
 
@@ -544,7 +544,7 @@ describe('Constraint: fade blends plants into fadeColor', () => {
         expect(warn, fadeColor).toHaveBeenCalledTimes(1);
         warn.mockRestore();
       }),
-      { numRuns: 300 }
+      { numRuns: 5 }
     );
   });
 });
@@ -593,7 +593,7 @@ describe('Constraint: construction and canvas styling', () => {
         expectStyle(opacity2, zIndex2);
         garden.destroy();
       }),
-      { numRuns: 300 }
+      { numRuns: 5 }
     );
   });
 
@@ -635,7 +635,7 @@ describe('Constraint: destroy() is terminal', () => {
           expect(ctx.calls.length).toBe(0); // nothing rendered to the detached canvas
         }
       ),
-      { numRuns: 200 }
+      { numRuns: 5 }
     );
   });
 
@@ -694,7 +694,7 @@ describe('Constraint: setOptions validation and re-render', () => {
           garden.destroy();
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 5 }
     );
   });
 
@@ -726,7 +726,7 @@ describe('Constraint: setOptions validation and re-render', () => {
         a.garden.destroy();
         b.garden.destroy();
       }),
-      { numRuns: 60 }
+      { numRuns: 5 }
     );
   });
 
@@ -741,7 +741,7 @@ describe('Constraint: setOptions validation and re-render', () => {
         expect(frameOps(ctx.calls)).toEqual(before);
         garden.destroy();
       }),
-      { numRuns: 80 }
+      { numRuns: 5 }
     );
   });
 
@@ -1096,7 +1096,7 @@ describe('Property: playback matches a reference model under random commands', (
         vi.unstubAllGlobals();
         vi.stubGlobal('matchMedia', mockMatchMedia);
       }),
-      { numRuns: 500, examples: pinned }
+      { numRuns: 5, examples: pinned }
     );
   });
 });

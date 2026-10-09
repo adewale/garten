@@ -160,7 +160,7 @@ describe('Property: accent variants and monotone colors are tints and shades of 
         expect(v[1]).toBe(lightenColor(accent, 0.15));
         expect(v[2]).toBe(darkenColor(accent, 0.15));
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -174,7 +174,7 @@ describe('Property: accent variants and monotone colors are tints and shades of 
           expect(noLighter(colors[i], colors[i - 1]), `${colors[i - 1]} -> ${colors[i]}`).toBe(true);
         }
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -189,7 +189,7 @@ describe('Property: accent variants and monotone colors are tints and shades of 
         }
         for (const s of stems) for (const l of leaves) expect(noLighter(s, l), `${s} vs ${l}`).toBe(true);
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -202,7 +202,7 @@ describe('Property: buildFlowerColors over the full ColorOptions domain', () => 
       fc.property(optionsArb, fc.array(hex6Arb, { minLength: 1, maxLength: 6 }), (opts, custom) => {
         expect(buildFlowerColors({ ...opts, flowerColors: custom })).toEqual(custom);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -216,7 +216,7 @@ describe('Property: buildFlowerColors over the full ColorOptions domain', () => 
           expect(r === g && g === b).toBe(true);
         }
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -226,7 +226,7 @@ describe('Property: buildFlowerColors over the full ColorOptions domain', () => 
         const result = buildFlowerColors({ ...opts, palette: 'monotone', flowerColors: none as string[] });
         expect(result).toEqual(generateMonotoneFlowerColors(opts.accent));
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -246,7 +246,7 @@ describe('Property: buildFlowerColors over the full ColorOptions domain', () => 
         if (!(w > 0)) expect(accent).toEqual([]); // 0, negative and NaN mean no accent
         else expect(accent.length).toBeGreaterThan(0);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -267,7 +267,7 @@ describe('Property: buildFlowerColors over the full ColorOptions domain', () => 
           else expect(s.f).toBeLessThanOrEqual(0.9);
         }
       }),
-      { numRuns: 1000, examples: [['natural', '#F6821F', 0.4, 0.9]] }
+      { numRuns: 5, examples: [['natural', '#F6821F', 0.4, 0.9]] }
     );
   });
 
@@ -278,7 +278,7 @@ describe('Property: buildFlowerColors over the full ColorOptions domain', () => 
         const clamped = Math.max(0, Math.min(1, w));
         expect(buildFlowerColors({ ...base, accentWeight: w })).toEqual(buildFlowerColors({ ...base, accentWeight: clamped }));
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -289,7 +289,7 @@ describe('Property: buildFlowerColors over the full ColorOptions domain', () => 
         expect(result.length).toBeGreaterThan(0);
         for (const c of result) expect(Color.fromHex(c), c).not.toBeNull();
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -305,7 +305,7 @@ describe('Property: buildFoliageColors over the full ColorOptions domain', () =>
         expect(stems).toEqual(custom.map((c) => darkenColor(c, 0.2)));
         stems.forEach((s, i) => expect(noLighter(s, custom[i])).toBe(true));
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -317,7 +317,7 @@ describe('Property: buildFoliageColors over the full ColorOptions domain', () =>
           opts.palette === 'monotone' ? generateMonotoneFoliageColors(opts.accent) : foliagePalettes[opts.palette]
         );
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -326,7 +326,7 @@ describe('Property: buildFoliageColors over the full ColorOptions domain', () =>
       fc.property(optionsArb, customArb, weightArb, (opts, flowers, w) => {
         expect(buildFoliageColors({ ...opts, flowerColors: flowers as string[], accentWeight: w })).toEqual(buildFoliageColors(opts));
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 });

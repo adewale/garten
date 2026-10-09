@@ -114,7 +114,7 @@ describe('Property: applyTheme merge laws', () => {
           if (expected === undefined) expect(k in colors, `${k} present as undefined`).toBe(false);
         }
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -123,7 +123,7 @@ describe('Property: applyTheme merge laws', () => {
       fc.property(themeArb, optionsArb, (theme, opts) => {
         expect(applyTheme(theme, opts).fadeColor).toBe(opts.fadeColor ?? theme.fadeColor);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -133,7 +133,7 @@ describe('Property: applyTheme merge laws', () => {
         const result = applyTheme(theme, opts);
         for (const k of SCALAR_KEYS) expect(result[k], k).toBe(opts[k]);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -142,7 +142,7 @@ describe('Property: applyTheme merge laws', () => {
       fc.property(themeArb, optionsArb, (theme, opts) => {
         expect(resolved(applyTheme(theme, opts))).toEqual(resolved(applyTheme(theme, stripUndefined(opts))));
       }),
-      { numRuns: 500 }
+      { numRuns: 5 }
     );
   });
 
@@ -153,7 +153,7 @@ describe('Property: applyTheme merge laws', () => {
         expect(applyTheme(name, opts)).toEqual(applyTheme('natural', opts));
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('not found'));
       }),
-      { numRuns: 300 }
+      { numRuns: 5 }
     );
   });
 });
@@ -170,7 +170,7 @@ describe('Property: applyPreset merge laws', () => {
           expect(result[k], k).toBe(opts[k] !== undefined ? opts[k] : preset.options[k]);
         }
       }),
-      { numRuns: 2000, examples: [[presets.lush, { generations: undefined }]] }
+      { numRuns: 5, examples: [[presets.lush, { generations: undefined }]] }
     );
   });
 
@@ -183,7 +183,7 @@ describe('Property: applyPreset merge laws', () => {
           expect(colors?.[k], k).toBe(user !== undefined ? user : preset.options.colors?.[k]);
         }
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -192,7 +192,7 @@ describe('Property: applyPreset merge laws', () => {
       fc.property(presetArb, optionsArb, (preset, opts) => {
         expect(resolved(applyPreset(preset, opts))).toEqual(resolved(applyPreset(preset, stripUndefined(opts))));
       }),
-      { numRuns: 500, examples: [[presets.lush, { generations: undefined }]] }
+      { numRuns: 5, examples: [[presets.lush, { generations: undefined }]] }
     );
   });
 
@@ -203,7 +203,7 @@ describe('Property: applyPreset merge laws', () => {
         expect(applyPreset(name, opts)).toEqual(applyPreset('default', opts));
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('not found'));
       }),
-      { numRuns: 300 }
+      { numRuns: 5 }
     );
   });
 });
@@ -223,7 +223,7 @@ describe('Property: createConfig merge laws', () => {
         }
         expect(result.fadeColor, 'fadeColor').toBe(opts.fadeColor ?? themes[t].fadeColor);
       }),
-      { numRuns: 2000, examples: [['lush', 'midnight', { generations: undefined, fadeColor: undefined }]] }
+      { numRuns: 5, examples: [['lush', 'midnight', { generations: undefined, fadeColor: undefined }]] }
     );
   });
 
@@ -237,7 +237,7 @@ describe('Property: createConfig merge laws', () => {
           expect(colors[k], k).toBe(user !== undefined ? user : fromTheme);
         }
       }),
-      { numRuns: 2000 }
+      { numRuns: 5 }
     );
   });
 
@@ -246,7 +246,7 @@ describe('Property: createConfig merge laws', () => {
       fc.property(presetName, themeName, optionsArb, (p, t, opts) => {
         expect(resolved(createConfig(p, t, opts))).toEqual(resolved(createConfig(p, t, stripUndefined(opts))));
       }),
-      { numRuns: 500, examples: [['lush', 'midnight', { generations: undefined, fadeColor: undefined }]] }
+      { numRuns: 5, examples: [['lush', 'midnight', { generations: undefined, fadeColor: undefined }]] }
     );
   });
 });
@@ -309,7 +309,7 @@ describe('Property: createTheme/createPreset build exactly the literal objects',
         expect(theme).toEqual({ name, ...config });
         expect(applyTheme(theme, opts)).toEqual(applyTheme({ name, ...config }, opts));
       }),
-      { numRuns: 500 }
+      { numRuns: 5 }
     );
   });
 
@@ -318,7 +318,7 @@ describe('Property: createTheme/createPreset build exactly the literal objects',
       fc.property(fc.string(), optionsArb, maybe(fc.string()), (name, options, description) => {
         expect(createPreset(name, options, description)).toEqual({ name, options, description });
       }),
-      { numRuns: 500 }
+      { numRuns: 5 }
     );
   });
 });

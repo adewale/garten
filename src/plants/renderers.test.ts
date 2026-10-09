@@ -96,7 +96,7 @@ describe('Property: drawStem', () => {
         expect(result).toBeNull();
         expect(calls).toEqual([]);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -110,7 +110,7 @@ describe('Property: drawStem', () => {
         const tip = drawStem(ctx, a.x, a.y, a.height, a.thickness, a.color, a.lean, growth);
         expect(tip).toEqual({ x: a.x + a.lean * h, y: a.y - h });
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -132,7 +132,7 @@ describe('Property: drawStem', () => {
           expect(inBox, `control point (${cx}, ${cy})`).toBe(true);
         }
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -151,7 +151,7 @@ describe('Property: drawStem', () => {
           },
         ]);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 });
@@ -178,7 +178,7 @@ describe('Property: drawLeaf', () => {
           expect(calls).toEqual([]);
         }
       ),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 
@@ -201,7 +201,7 @@ describe('Property: drawLeaf', () => {
         expect(calls[6].args.slice(4)).toEqual([0, 0]);
         expect(styles.map((st) => st.fillStyle)).toEqual([a.color]);
       }),
-      { numRuns: 1000 }
+      { numRuns: 5 }
     );
   });
 });

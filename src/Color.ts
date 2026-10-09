@@ -174,7 +174,7 @@ export class Color {
     // RGB/RGBA format
     // Anchored (no surrounding garbage); alpha may use exponent notation,
     // which toRGBString() emits for tiny alphas
-    const rgbMatch = str.match(/^rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+(?:e[-+]?\d+)?))?\s*\)$/);
+    const rgbMatch = str.match(/^rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*((?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?))?\s*\)$/);
     if (rgbMatch) {
       return new Color(
         parseInt(rgbMatch[1]),
@@ -185,7 +185,7 @@ export class Color {
     }
 
     // HSL/HSLA format
-    const hslMatch = str.match(/^hsla?\s*\(\s*(\d+)\s*,\s*(\d+)%?\s*,\s*(\d+)%?\s*(?:,\s*([\d.]+(?:e[-+]?\d+)?))?\s*\)$/);
+    const hslMatch = str.match(/^hsla?\s*\(\s*(\d+)\s*,\s*(\d+)%?\s*,\s*(\d+)%?\s*(?:,\s*((?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?))?\s*\)$/);
     if (hslMatch) {
       return Color.fromHSL(
         parseInt(hslMatch[1]),

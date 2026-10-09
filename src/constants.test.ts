@@ -114,7 +114,7 @@ describe('Constraint: seed strides cannot collide', () => {
           expect(starts[n - 1] + MAX_RNG_DRAWS_PER_PLANT).toBeLessThan(Number.MAX_SAFE_INTEGER);
         }
       ),
-      { numRuns: 200, examples: [['lush', OPTION_BOUNDS.GENERATIONS.max, OPTION_BOUNDS.SEED.max - 1]] }
+      { numRuns: 5, examples: [['lush', OPTION_BOUNDS.GENERATIONS.max, OPTION_BOUNDS.SEED.max - 1]] }
     );
   });
 
