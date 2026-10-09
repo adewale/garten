@@ -161,7 +161,7 @@ A call-recording canvas mock happily reported `quadraticCurveTo` called 8 times 
 
 The seed-stride collision (gen stride 1000 < 30 plants × 100) and the pool-cap crash (OPTION_BOUNDS allows ~30,000 plants; pool hard-capped at 16,384) were both pairs of *individually plausible* constants that nobody ever checked against each other. There was no place where "no two plants may share an RNG stream" or "the pool must cover the worst legal config" was stated.
 
-**Lesson:** cross-cutting invariants must be articulated as executable tests (`constants.test.ts`). When a re-introduced seed-stride bug is killed by the *invariant* test before any behavioral test fires, the invariant is doing its job.
+**Lesson:** cross-cutting invariants must be articulated as executable tests (the seed-stride invariants live in `constants.test.ts`; the pool-capacity one in `Garden.test.ts`, "Constraint: pool capacity covers the worst legal configuration"). When a re-introduced seed-stride bug is killed by the *invariant* test before any behavioral test fires, the invariant is doing its job.
 
 ## 18. Documentation Claims Need Failing Conditions
 
@@ -179,7 +179,7 @@ Numbers from the v1.1.0 testing upgrade (same machine, see `docs/test-suite-benc
 
 **Lesson:** "does the suite catch the bugs we actually shipped?" is a measurable question. Re-introduce fixed defects periodically (or run mutation testing) — a suite that has never been measured against real defects is an untested test suite.
 
-**Postscript:** mutation testing is now automated (Stryker, weekly in CI) and its first survivor-mining pass found real gaps the probes missed: nothing pinned the default option values (a `loop: false → true` mutant survived everything), bounds were never probed at their edges, and easing-function bodies could be emptied unnoticed. Class-level nets took `GrowthProgress.ts` from 67.6% to 88.0% and the core boundary to ~73%; what survives is classified (tuning constants, dev-warning text) rather than ignored.
+**Postscript:** mutation testing is now automated (Stryker, on demand in CI) and its first survivor-mining pass found real gaps the probes missed: nothing pinned the default option values (a `loop: false → true` mutant survived everything), bounds were never probed at their edges, and easing-function bodies could be emptied unnoticed. Class-level nets took `GrowthProgress.ts` from 67.6% to 88.0% and the core boundary to ~73%; what survives is classified (tuning constants, dev-warning text) rather than ignored.
 
 ## 20. A Lesson Written as Prose Is a Lesson Waiting to Recur
 

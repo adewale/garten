@@ -8,14 +8,14 @@
 
 - Canvas 2D API for rendering
 - `requestAnimationFrame` for animation
-- `ResizeObserver` for responsive sizing
+- `ResizeObserver` for responsive sizing (falls back to the window `resize` event where it is unavailable)
 - Built-in `Math` for procedural generation
 
-The only dev dependencies are `tsup` (bundler) and `typescript` (compiler), which are not shipped to users.
+Dev dependencies (the `tsup` bundler, the `typescript` compiler, and test tooling such as `vitest`, `fast-check`, `jsdom`, Playwright, Stryker and `es-check`) are build- and test-time only and are not shipped to users.
 
 ### What browsers are supported?
 
-Chrome 64+, Firefox 69+, Safari 12+, Edge 79+. Any browser with Canvas 2D and ResizeObserver support.
+Chrome 64+, Firefox 69+, Safari 12+, Edge 79+ (the bundles are compiled to these targets). Canvas 2D is required; `ResizeObserver` is used when present, otherwise Garten listens for window `resize` events, which do not see container-only size changes.
 
 ### Why isn't anything showing up?
 
@@ -47,7 +47,8 @@ new Garten({ container: '#garden', background: '#0b1020' });
 ```
 
 If you use `fadeHeight`, set `fadeColor` to match your page background so the
-fade blends correctly.
+fade blends correctly. `fadeColor` accepts any CSS color; `'transparent'`
+fades the plant tops out to transparent instead of to a color.
 
 ### Can I use Garten with React/Vue/Svelte?
 
@@ -93,7 +94,8 @@ Each plant category has natural height ranges to create realistic proportions:
 | Bushes | 8-16% |
 | Wildflowers | 8-18% |
 | Daisies, Orchids | 10-20% |
-| Flowers, Tulips | 10-22% |
+| Simple flowers | 10-22% |
+| Tulips | 12-22% |
 | Roses | 12-25% |
 | Lilies | 14-26% |
 | Specialty (Sunflowers, etc.) | 12-28% |
@@ -104,17 +106,25 @@ Each plant category has natural height ranges to create realistic proportions:
 | **Conifers** (Pine, Cypress, Juniper) | 55-100% |
 | **Small Trees** (Birch, Willow, Cherry) | 60-100% |
 
-The `maxHeight` option controls both which plant categories appear and their distribution:
+A category is available only when `maxHeight` is at least the bottom of its
+range. Heights are drawn from the category range capped at `maxHeight`, and
+no plant's stem is drawn taller than it; flower heads, lavender spikes and
+pampas plumes can rise somewhat above the line.
 
-- `maxHeight: 0.35` (default) — Only ground-level plants (grass through specialty flowers)
-- `maxHeight: 0.5` — Adds tall flowers and giant grasses (moderate boost)
-- `maxHeight: 0.7` — Adds climbers and tropical plants (tall plants become ~35% of garden)
-- `maxHeight: 1.0` — Full "overgrown garden" with trees reaching the top (~50% tall plants)
+The `maxHeight` option controls both which plant categories appear and their
+distribution. The percentages below are the expected share of tall-category
+plants (tall flowers through small trees) from the category weights in
+`src/plants/generator.ts`; any one garden varies around them:
+
+- `maxHeight: 0.35` (default) — Ground-level plants plus tall flowers (unlocked at 0.30), ~6% tall plants
+- `maxHeight: 0.5` — Adds giant grasses (0.40), climbers and tropical plants (0.50), ~23% tall plants
+- `maxHeight: 0.7` — Adds conifers (0.55) and small trees (0.60), ~40% tall plants
+- `maxHeight: 1.0` — Full "overgrown garden" with trees reaching the top, ~50% tall plants
 
 As you increase `maxHeight`, the library automatically:
 1. Unlocks taller plant categories
-2. Increases the proportion of tall plants in the garden
-3. Biases plant heights toward their maximum to ensure some reach the top
+2. Increases the weight of tall categories (up to 4x at `maxHeight: 1.0`)
+3. Above 0.5, biases plant heights toward the top of their range so some reach the top
 
 This creates a dramatic difference between a tidy garden (`0.35`) and an overgrown forest (`1.0`).
 
@@ -139,7 +149,7 @@ Two approaches:
 
 1. **Shorter duration** - Complete the animation faster:
    ```javascript
-   new Garten({ duration: 60 });  // 1 minute instead of 10
+   new Garten({ container: '#garden', duration: 60 });  // 1 minute instead of 10
    ```
 
 2. **Higher speed** - Play at 2x, 5x, etc.:
@@ -188,15 +198,20 @@ garden.regenerate();  // Regenerates plants with current options
 
 ### What does `timingCurve` do?
 
-It controls how generations are paced over the duration:
+It controls how generations are paced over the duration. The curve is the
+fraction of generations that have started at each point in the animation:
 
 | Value | Effect |
 |-------|--------|
 | `'linear'` | Even pacing (default) |
-| `'ease-out'` | Rapid early growth, slowing toward end |
-| `'ease-in'` | Slow start, rapid growth toward end |
+| `'ease-out'` | Fast start: new generations arrive quickly at first, then slow down toward the end |
+| `'ease-in'` | Slow start, speeding up toward the end |
 | `'ease-in-out'` | Slow start and end, fast middle |
-| `2.5` | Custom exponent (>1 = ease-out, <1 = ease-in) |
+| `2.5` | Custom exponent `e`: >1 = ease-out of power `e`, <1 = ease-in of power `1/e` (clamped to 0.1-10) |
+
+Before the fix in the Unreleased changelog entry, the named and numeric
+curves paced the garden the opposite way (for example `'ease-out'` started
+slowly). To approximate the old pacing, use the opposite curve.
 
 ---
 
@@ -330,21 +345,21 @@ Several approaches:
 
 1. **Reduce plant height**:
    ```javascript
-   new Garten({ maxHeight: 0.15 });  // Shorter plants
+   new Garten({ container: '#garden', maxHeight: 0.15 });  // Shorter plants
    ```
 
 2. **Use the built-in fade effect**:
    ```javascript
    new Garten({
      container: '#garden',
-     fadeHeight: 0.3,      // Fade out over 30% of container height
-     fadeColor: '#ffffff'  // Match your background color
+     fadeHeight: 0.3,      // Top 30% (of container height) below the maxHeight line fades
+     fadeColor: '#ffffff'  // Match your background color (any CSS color)
    });
    ```
 
 3. **Reduce opacity**:
    ```javascript
-   new Garten({ opacity: 0.7 });  // Semi-transparent plants
+   new Garten({ container: '#garden', opacity: 0.7 });  // Semi-transparent plants
    ```
 
 4. **Add padding to your content**:
@@ -373,7 +388,7 @@ Yes. By default, if a user has `prefers-reduced-motion: reduce` set, Garten disp
 
 Disable this with:
 ```javascript
-new Garten({ respectReducedMotion: false });
+new Garten({ container: '#garden', respectReducedMotion: false });
 ```
 
 ### Is the canvas accessible?
@@ -402,7 +417,7 @@ The browser couldn't create a Canvas 2D context. This is rare but can happen if:
 
 Increase the pixel ratio limit:
 ```javascript
-new Garten({ maxPixelRatio: 3 });  // Default is 2
+new Garten({ container: '#garden', maxPixelRatio: 3 });  // Default is 2
 ```
 
 ### Memory usage keeps growing

@@ -10,7 +10,7 @@ and `docs/test-suite-benchmark-2026-06.md` for the before/after numbers).
 
 ```bash
 npm test               # watch mode
-npm run test:run       # single pass (~980 tests, ~7s)
+npm run test:run       # single pass (~7s)
 npm run test:coverage  # with v8 coverage
 npm run verify         # typecheck + tests + build + dist syntax gate
 npm run check:dist     # es-check: dist/ parses at the documented browser level
@@ -19,10 +19,14 @@ npm run check:dist     # es-check: dist/ parses at the documented browser level
 `npm run verify` is the pre-publish gate (`prepublishOnly`).
 
 CI (`.github/workflows/ci.yml`) runs `verify` and the Chromium suites on
-every PR/push to main, and the scoped mutation run weekly or on demand
-(`workflow_dispatch`), uploading the HTML report as an artifact. Perf
-canaries assume an uncontended runner — running the vitest suite while a
-local Stryker run saturates the CPU can flake them.
+every PR/push to main. `.github/workflows/probes.yml` runs the
+defect-reintroduction probes (~2 min) on PRs and pushes to main that touch
+`src/`, `tests/`, the probes, `package.json`/`package-lock.json`, the
+vitest/Stryker configs or that workflow. The scoped mutation run is on
+demand only (`workflow_dispatch` on `ci.yml`, ~10 min), uploading the HTML
+report as an artifact. Perf canaries assume an uncontended runner —
+running the vitest suite while a local Stryker run saturates the CPU can
+flake them.
 
 ## Organizing principle: cover risk boundaries, not files
 
@@ -38,8 +42,8 @@ a boundary no test crossed.
 | Plant data → canvas | `plants/render-sweep.test.ts` | **exhaustive**: all 147 plant types × 6 growth stages × extreme variations under the strict semantic mock |
 | Time → controller state/events | `Garden.test.ts` | fake rAF + fake `performance`; includes a hand-driven rAF for true background-tab (single-frame jump) simulation |
 | Canvas lifecycle (resize, background, fade) | `Garden.test.ts` (Renderer sections) | recording mock + behavior assertions (frame survives resize, transparent default) |
-| Constants ↔ constants | `constants.test.ts` | cross-invariants: seed strides vs density maxima, defaults within bounds, pool capacity vs worst legal config |
-| Code ↔ documentation | `docs-sync.test.ts` | code is the source of truth: themes/presets/categories/options/events must appear in README; counts asserted against enums; browser claims parsed from `tsup.config.ts` |
+| Constants ↔ constants | `constants.test.ts`, `Garden.test.ts` | cross-invariants: seed strides vs density maxima, defaults within bounds (`constants.test.ts`); pool capacity vs worst legal config (`Garden.test.ts`, "Constraint: pool capacity covers the worst legal configuration") |
+| Code ↔ documentation | `docs-sync.test.ts` | code is the source of truth: themes/presets/categories/options/events must appear in README; README option-table defaults match `defaultOptions` and the speed bound matches `OPTION_BOUNDS`; counts asserted against enums; browser claims parsed from `tsup.config.ts` |
 | Source ↔ shipped bundles | `npm run check:dist` (es-check) | dist must parse at the documented minimum browser syntax level |
 | Pure math/value objects | `property.test.ts`, unit suites | fast-check algebraic properties + examples |
 
@@ -86,6 +90,38 @@ ever sampled that region — exhaustiveness is the structural fix.
 - Fake time completely (`requestAnimationFrame`, `performance`, timers); for
   multi-second jumps in one frame, drive the rAF callback by hand
 
+## Property-based tests
+
+The fast-check properties follow the Hegel property-testing guidance
+(hegel.dev; its `hegel-review` checklist) and Hypothesis's advice on
+oracles:
+
+- **Strong oracles.** Pin values against documented tables written out in
+  the test, not against `OPTION_BOUNDS`/`defaultOptions` (a wrong table must
+  not pass by construction). Prefer round-trips, a naive reference
+  implementation, metamorphic relations, and siblings agreeing (the legacy
+  `options.events` callbacks vs `on()`, `createRandom` vs `SeededRandom`,
+  pool vs `GrowthProgress`).
+- **Model-based tests for stateful APIs.** `Garden.test.ts` runs random
+  command sequences against a reference model of the controller and checks
+  state, elapsed time and every emitted event after each step;
+  `EventEmitter.test.ts` and `memory.test.ts` do the same for the emitter
+  and the pool.
+- **Full domains.** Generate every documented parameter, config knob and
+  hostile input (NaN, ±Infinity, subnormals, wrong types). Bias generators
+  toward rare-but-legal cases (exactly the end, sub-frame gaps) and check
+  coverage with `fc.statistics` in a scratch run.
+- **Both directions.** For parsers and validators, assert rejection of
+  near-valid input, not just acceptance of valid input.
+- **One contract per test, exact where the contract is exact.** A tolerance
+  must be derived from the contract (e.g. subnormal step, one rounding);
+  never widen one, narrow a generator or skip a test after watching it fail.
+  A failing property is a finding: fix the code or the documented contract.
+- **Pin regressions** as fast-check `examples`, and delete example tests a
+  property fully subsumes.
+- **Prove each property can fail**: plant the bug it targets, watch it go
+  red, restore.
+
 ## Real-pixel tests (Playwright)
 
 `tests/visual/garden.spec.ts` runs the **built IIFE bundle** in real Chromium
@@ -94,19 +130,30 @@ cannot see:
 
 - **Pixel probes** (platform-independent): background alpha is 0 by default
   and exactly the configured color with the `background` option; a completed
-  garden paints >5k pixels in the bottom band and none above `maxHeight`; a
-  `maxHeight: 1` garden paints the *top* band (the formerly-invisible tall
+  default garden (`maxHeight: 0.35`) paints >5k pixels in the bottom third
+  of the canvas and none in the top third (a coarse bound: it would not
+  catch plants overshooting `maxHeight` by less than about 0.3 of the
+  height); a `maxHeight: 1` garden paints the *top* band (the formerly-invisible tall
   region); the same seed produces a **byte-identical** bitmap across page
   loads; a real `ResizeObserver` resize repaints the frame while idle.
 - **Golden screenshots** (change detection): three committed Linux-Chromium
   goldens (default complete, mid-growth, tall-on-dark). Regenerate with
-  `npm run test:visual -- --update-snapshots`; AA is the only variance
+  `npm run build && npm run test:visual -- --update-snapshots` (the fixture
+  loads `dist/index.global.js`, and `test:visual` does not build); AA is the only variance
   (no text is rendered), budgeted at `maxDiffPixelRatio: 0.01`.
 
 ```bash
 npx playwright install chromium   # one-time browser download
 npm run test:e2e                  # build + visual + contract projects
 ```
+
+The goldens and CI use the Playwright version in `package-lock.json`
+(`@playwright/test` 1.60.0), which downloads Chromium revision 1223
+(Chrome for Testing 148.0.7778.96). Reproduce CI locally with that version
+(`npm ci`, then `npx playwright install chromium`); a different Playwright
+release expects a different Chromium revision and can fail to launch or
+shift anti-aliasing in the goldens. When upgrading Playwright, update this
+note and regenerate the goldens on Linux.
 
 ## Mock contract tests (Playwright)
 
@@ -130,17 +177,32 @@ The suite's strength is verified, not assumed:
   mutates the options/palette/growth/generation boundary files and runs the
   vitest suite per mutant (`coverageAnalysis: perTest`, incremental cache in
   `reports/stryker-incremental.json`); `npm run test:mutation` covers all of
-  `src/`. Baseline, scores, and how to read survivors (tuning constants vs
-  real assertion gaps): `docs/test-suite-benchmark-2026-06.md` §5c. Run it
+  `src/`. Stryker runs `vitest.stryker.config.ts`, which is the normal suite
+  minus the wall-clock perf canaries: instrumentation slows the mutated
+  files several-fold, so the ops/sec floors can fail the initial dry run on
+  a loaded machine (seen locally; not observed on ubuntu-latest, where 16/16
+  weekly dry runs with the canaries passed). Baseline, scores, and how to
+  read survivors (tuning constants vs real assertion gaps):
+  `docs/test-suite-benchmark-2026-06.md` §5c. Run it
   after substantial suite or boundary changes — it is too slow for the
   per-commit `verify` gate. When a survivor exposes a real gap, kill it with
   a *class-level* assertion (e.g. the color well-formedness constraint), not
   a mutant-shaped one.
 - **Defect-reintroduction probes**: the 12 historical defects from the June
-  2026 audit are re-applied one at a time and the suite must kill each one.
+  2026 audit are committed as patches in `scripts/defect-probes/`
+  (`P01`–`P12`, one per defect in table 1 of
+  `docs/test-suite-benchmark-2026-06.md`). `npm run test:probes` applies each
+  one to a disposable worktree of `HEAD`, runs the vitest suite (minus the
+  wall-clock perf canaries), and exits non-zero unless the unpatched suite
+  passes and **every** probe is killed. CI runs it on every PR and push to
+  main that touches the code, the suite, the probes or the test configs
+  (`probes.yml`, ~2 min), so a change that stops killing a previously
+  shipped defect fails its PR.
   Current kill rate: 12/12 (the v1.0.3 suite scored 0/12 — every defect
   shipped under green). The probes remain the curated, fast complement to
   Stryker: they encode *real shipped bugs* rather than synthetic operators.
+  If a refactor makes a patch stop applying, the runner reports it as STALE:
+  re-express the same defect against the new code rather than deleting it.
 - When fixing any bug: write the failing test first (red), fix (green), and
   ask which *class* the bug belongs to — then add the class-level net
   (property, invariant, or sweep), not just the instance-level regression.
@@ -150,5 +212,22 @@ The suite's strength is verified, not assumed:
 - Visual goldens are Linux-Chromium only (the CI platform). Cross-browser
   pixel parity (WebKit/Firefox projects) is possible but each adds a golden
   set; the pixel-probe assertions already run identically everywhere.
-- Mutation testing is scoped + scheduled rather than gating: a full-`src`
-  run is CPU-expensive. Revisit if CI capacity allows.
+- Mutation testing is scoped and on demand (`workflow_dispatch`), not
+  scheduled or per commit: a full-`src` run is CPU-expensive, and a weekly
+  schedule re-scored unchanged `main` (94f2c09) 16 times, 2026-06-15 to
+  2026-09-28, with the same result every week (73.86% total / 79.12%
+  covered, ~10 min each) and no follow-up commit, so it was removed.
+  Stryker is an audit tool here, not a gate: run it when auditing or
+  rewriting a module's tests, ideally scoped to the files being changed,
+  and turn surviving mutants into assertions. `break` in
+  `stryker.config.json` stays `null` because no decision hangs on the
+  score (local runs on a loaded machine also inflate it: Stryker counts
+  timeouts as detected; a 2026-09 local run with 23 timeouts scored 75.75%
+  against CI's 73.86% with 3–5). The per-change guarantees come from the
+  defect probes and from planting each new test's bug before trusting it.
+- Property tests and fuzzing cover inputs, not oracles: the properties
+  "monotone and bounded" held for the inverted timing curves too, so they
+  never caught the inversion.
+  Prefer properties that pin the right answer (inverses, comparison with a
+  simple reference, exact fallback values), and check each one fails on a
+  planted bug.

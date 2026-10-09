@@ -8,9 +8,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run build      # Build ESM, CJS, and IIFE bundles with tsup
 npm run dev        # Watch mode for development
 npm run typecheck  # Type check without emitting
+npm test           # Vitest in watch mode
 npm run test:run   # Run the test suite once
+npm run test:coverage  # Test suite once with v8 coverage
 npm run verify     # typecheck + tests + build + dist syntax gate (pre-publish)
-npm run test:e2e   # Real-pixel + canvas-contract tests in Chromium (needs `npx playwright install chromium`)
+npm run check:dist # es-check: dist bundles parse at the documented ES2018 level (needs a build)
+npm run test:e2e   # Build, then real-pixel + canvas-contract tests in Chromium (needs `npx playwright install chromium`)
+npm run test:visual    # Playwright visual project only (uses the existing dist build)
+npm run test:contract  # Playwright canvas-contract project only
+npm run test:probes    # Apply each defect-reintroduction probe and require the suite to kill it (~2 min)
+npm run test:mutation       # Stryker mutation testing over all of src/ (slow; on demand)
 npm run test:mutation:core  # Stryker mutation testing on the core boundary files (slow; not part of verify)
 npm run clean      # Remove dist directory
 ```
@@ -60,6 +67,14 @@ This is a TypeScript canvas animation library that renders an animated garden wi
 
 - **`src/plants/variations.ts`** - Plant variation parameter definitions. Sparse `variationOverrides` map merged with defaults.
 
+- **`src/plants/index.ts`** - Re-exports from the `plants/` modules (generator, renderers, variations).
+
+- **`src/presets.ts`** - Built-in `themes` and `presets`, plus `applyTheme`, `applyPreset`, `createConfig`, `createTheme`, `createPreset` and the name getters.
+
+- **`src/index.ts`** - Public entry point. Defines everything the package exports.
+
+- **`src/test-ambient.d.ts`** - Test-only ambient declarations for the `node:fs`/`node:path` builtins the doc-sync tests use (the project omits `@types/node`).
+
 ### Animation Flow
 
 1. Constructor resolves options and generates all plants upfront via `generatePlants()`
@@ -75,7 +90,7 @@ This is a TypeScript canvas animation library that renders an animated garden wi
 - Seeded RNG (`createRandom()`) enables deterministic gardens when `seed` option is provided (integer-hash based, so results match across browsers)
 - Canvas background is transparent by default; the `background` option fills a solid color
 - Plants are sorted tallest-first so shorter plants draw later and stay visible in front (painter's algorithm)
-- Per-plant RNG seeds are derived with non-overlapping strides (`GEN_SEED_STRIDE`/`PLANT_SEED_STRIDE` in `generator.ts`) so no two plants share a random stream
+- Per-plant RNG seeds are derived with non-overlapping strides (`GEN_SEED_STRIDE`/`PLANT_SEED_STRIDE` in `generator.ts`) so no two plants share a generation-time random stream. Render-time decoration RNG in `renderers.ts` (e.g. `seededRandom(seed + i * 10)`) can overlap between plants; that only affects cosmetic details
 
 ### Plant Type Architecture
 
@@ -83,13 +98,15 @@ This is a TypeScript canvas animation library that renders an animated garden wi
 
 ### Timing Curve System
 
-The `timingCurve` option controls how time is distributed across generations. Implemented via `applyTimingCurve()` in `utils.ts`, it warps generation start times:
+The `timingCurve` option controls how generations are spread over the duration. The fraction of generations that have started by time `t` follows the named easing curve (the same meaning as `GrowthProgress.eased`). `applyTimingCurve()` in `utils.ts` therefore returns the curve's inverse applied to `g/N`, which is generation `g`'s start time as a fraction of the duration:
 
-- `'linear'` (default): Equal time per generation
-- `'ease-out'`: Early generations complete quickly, later ones slow down
-- `'ease-in'`: Slow start, accelerating finish
-- `'ease-in-out'`: Smooth S-curve (smoothstep)
-- `number`: Custom exponent (>1 = ease-out, <1 = ease-in)
+- `'linear'` (default): Even pacing; start = `g/N`
+- `'ease-out'`: Fast start, generations arrive quickly and then slow down; start = `1 - (1 - g/N)^(1/2)` (ease-out of power 2)
+- `'ease-in'`: Slow start, speeding up; start = `(g/N)^0.5` (ease-in of power 2)
+- `'ease-in-out'`: Slow start and end, fast middle; start = inverse of `eased('ease-in-out')`: `sqrt(x/2)` for `x <= 0.5`, mirrored (`1 - sqrt((1-x)/2)`) above
+- `number` `e` (clamped to 0.1-10): `e > 1` is ease-out of power `e` (start = `1 - (1 - g/N)^(1/e)`); `e < 1` is ease-in of power `1/e` (start = `(g/N)^e`)
+
+`generationComplete` fires from the plants' actual end times (`getGenerationEndTimes()` in `generator.ts`), so it follows the curve too.
 
 ### Performance Optimizations
 

@@ -1,0 +1,66 @@
+diff --git a/src/defaults.ts b/src/defaults.ts
+index d000927..b3a88a0 100644
+--- a/src/defaults.ts
++++ b/src/defaults.ts
+@@ -222,13 +222,13 @@ export function resolveOptions(options: GardenOptions): ResolvedOptions {
+   // (e.g. from theme helpers) from clobbering the defaults.
+   const mergedColors: Required<ColorOptions> = {
+     ...defaultColorOptions,
+-    ...omitUndefined(options.colors),
++    ...options.colors,
+   };
+   const colors: Required<ColorOptions> = {
+     ...mergedColors,
+     palette: resolvePalette(mergedColors.palette),
+-    flowerColors: resolveColorList('flowerColors', mergedColors.flowerColors),
+-    foliageColors: resolveColorList('foliageColors', mergedColors.foliageColors),
++    flowerColors: mergedColors.flowerColors,
++    foliageColors: mergedColors.foliageColors,
+     accentWeight: clampFraction(mergedColors.accentWeight, defaultColorOptions.accentWeight),
+   };
+ 
+diff --git a/src/palettes.ts b/src/palettes.ts
+index 4e699ed..c3e6342 100644
+--- a/src/palettes.ts
++++ b/src/palettes.ts
+@@ -146,7 +146,7 @@ const MAX_ACCENT_RATIO = 9;
+ export function buildFlowerColors(options: Required<ColorOptions>): string[] {
+   // Use custom colors if provided (defensive ?? [] — merges from theme
+   // helpers have historically produced explicit undefined here)
+-  const customFlowers = options.flowerColors ?? [];
++  const customFlowers = options.flowerColors;
+   if (customFlowers.length > 0) {
+     return customFlowers;
+   }
+@@ -196,7 +196,7 @@ export function buildFoliageColors(
+   options: Required<ColorOptions>
+ ): { leaves: string[]; stems: string[] } {
+   // Defensive ?? [] — see buildFlowerColors
+-  const customFoliage = options.foliageColors ?? [];
++  const customFoliage = options.foliageColors;
+   if (customFoliage.length > 0) {
+     // Use custom colors for both
+     return {
+diff --git a/src/presets.ts b/src/presets.ts
+index e38bae3..8376391 100644
+--- a/src/presets.ts
++++ b/src/presets.ts
+@@ -343,13 +343,11 @@ export function applyTheme(
+   // explicit `undefined` values would later clobber resolveOptions defaults
+   // (this exact bug crashed 6 of 11 built-in themes in <= 1.0.3).
+   const colors: ColorOptions = {
+-    ...omitUndefined({
+-      palette: themeConfig.palette,
+-      accent: themeConfig.accent,
+-      flowerColors: themeConfig.flowerColors,
+-      foliageColors: themeConfig.foliageColors,
+-    }),
+-    ...omitUndefined(options.colors),
++    palette: themeConfig.palette,
++    accent: themeConfig.accent,
++    flowerColors: themeConfig.flowerColors,
++    foliageColors: themeConfig.foliageColors,
++    ...options.colors,
+   };
+ 
+   return {

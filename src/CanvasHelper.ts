@@ -615,7 +615,7 @@ export function drawStem(
   lean: number,
   growth: number
 ): { x: number; y: number } | null {
-  if (growth <= 0) return null;
+  if (!(growth > 0)) return null; // also rejects NaN
 
   const h = height * Math.min(1, growth);
 
@@ -652,7 +652,7 @@ export function drawLeaf(
   size: number,
   color: string
 ): void {
-  if (size < 1) return;
+  if (!(size >= 1)) return; // also rejects NaN
 
   ctx.save();
   ctx.translate(x, y);

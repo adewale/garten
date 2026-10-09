@@ -8,7 +8,7 @@ import type {
   ResolvedOptions,
 } from './types';
 import { resolveOptions } from './defaults';
-import { generatePlants, getCompletedGenerations } from './plants';
+import { generatePlants, getCompletedGenerations, getGenerationEndTimes } from './plants';
 import { Renderer } from './Renderer';
 import { EventEmitter } from './EventEmitter';
 import { prefersReducedMotion, omitUndefined } from './utils';
@@ -45,6 +45,9 @@ export class Garten implements GardenController {
   private lastFrameTime: number = 0;
   private frameInterval: number;
   private lastReportedGeneration: number = -1;
+  // Per-generation fully-grown times, cached for the current plants array
+  private generationEnds: number[] = [];
+  private generationEndsFor: PlantData[] | null = null;
 
   constructor(options: GardenOptions) {
     // Resolve and validate options
@@ -153,12 +156,27 @@ export class Garten implements GardenController {
   }
 
   /**
+   * Number of generations whose plants have all finished growing at `time`
+   */
+  private completedGenerationsAt(time: number): number {
+    if (this.generationEndsFor !== this.plants) {
+      this.generationEnds = getGenerationEndTimes(
+        this.plants,
+        this.options.generations,
+        this.options.duration
+      );
+      this.generationEndsFor = this.plants;
+    }
+    return getCompletedGenerations(time, this.generationEnds);
+  }
+
+  /**
    * Fire generation-complete events for every boundary crossed since the
    * last reported generation, up to the current elapsed time
    */
   private emitGenerationEvents(): void {
-    const { duration, generations } = this.options;
-    const currentGen = getCompletedGenerations(this.elapsedTime, duration, generations);
+    const { generations } = this.options;
+    const currentGen = this.completedGenerationsAt(this.elapsedTime);
 
     for (let gen = Math.max(1, this.lastReportedGeneration + 1); gen <= currentGen; gen++) {
       this.options.events.onGenerationComplete?.(gen, generations);
@@ -296,11 +314,7 @@ export class Garten implements GardenController {
 
     // Align generation tracking with the new position without firing
     // catch-up events
-    this.lastReportedGeneration = getCompletedGenerations(
-      clampedTime,
-      this.options.duration,
-      this.options.generations
-    );
+    this.lastReportedGeneration = this.completedGenerationsAt(clampedTime);
 
     // Render at new position
     this.renderer.render(this.plants, clampedTime);
@@ -540,11 +554,7 @@ export class Garten implements GardenController {
 
     // Align generation tracking with the current position (no catch-up
     // events for boundaries that already passed)
-    this.lastReportedGeneration = getCompletedGenerations(
-      this.elapsedTime,
-      this.options.duration,
-      this.options.generations
-    );
+    this.lastReportedGeneration = this.completedGenerationsAt(this.elapsedTime);
 
     // Re-render at current position
     this.renderer.render(this.plants, this.elapsedTime);

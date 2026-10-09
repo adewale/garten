@@ -21,6 +21,9 @@ export interface HSL {
   l: number;
 }
 
+/** Hex color grammar accepted by Color.fromHex */
+const HEX_GRAMMAR = /^#?(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
 /**
  * Color value object with comprehensive color manipulation utilities
  * Immutable - all operations return new Color instances
@@ -40,10 +43,12 @@ export class Color {
    * @param a Alpha component (0-1), defaults to 1
    */
   constructor(r: number, g: number, b: number, a: number = 1) {
-    this._r = Math.round(Math.max(0, Math.min(255, r)));
-    this._g = Math.round(Math.max(0, Math.min(255, g)));
-    this._b = Math.round(Math.max(0, Math.min(255, b)));
-    this._a = Math.max(0, Math.min(1, a));
+    // NaN would pass Math.min/max: a NaN channel is 0, a NaN alpha opaque
+    const channel = (v: number) => (Number.isNaN(v) ? 0 : Math.round(Math.max(0, Math.min(255, v))));
+    this._r = channel(r);
+    this._g = channel(g);
+    this._b = channel(b);
+    this._a = Number.isNaN(a) ? 1 : Math.max(0, Math.min(1, a));
   }
 
   // ==================== GETTERS ====================
@@ -75,7 +80,10 @@ export class Color {
    * Supports #RGB, #RRGGBB, and #RRGGBBAA formats
    */
   static fromHex(hex: string): Color | null {
-    const cleaned = hex.replace('#', '');
+    // Exactly an optional leading '#' and 3, 6 or 8 hex digits: parseInt alone
+    // accepts partial input ('1g' -> 1) and replace('#') stripped a '#' anywhere
+    if (!HEX_GRAMMAR.test(hex)) return null;
+    const cleaned = hex.charAt(0) === '#' ? hex.slice(1) : hex;
 
     let r: number, g: number, b: number, a: number = 255;
 
@@ -164,7 +172,9 @@ export class Color {
     }
 
     // RGB/RGBA format
-    const rgbMatch = str.match(/rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/);
+    // Anchored (no surrounding garbage); alpha may use exponent notation,
+    // which toRGBString() emits for tiny alphas
+    const rgbMatch = str.match(/^rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+(?:e[-+]?\d+)?))?\s*\)$/);
     if (rgbMatch) {
       return new Color(
         parseInt(rgbMatch[1]),
@@ -175,7 +185,7 @@ export class Color {
     }
 
     // HSL/HSLA format
-    const hslMatch = str.match(/hsla?\s*\(\s*(\d+)\s*,\s*(\d+)%?\s*,\s*(\d+)%?\s*(?:,\s*([\d.]+))?\s*\)/);
+    const hslMatch = str.match(/^hsla?\s*\(\s*(\d+)\s*,\s*(\d+)%?\s*,\s*(\d+)%?\s*(?:,\s*([\d.]+(?:e[-+]?\d+)?))?\s*\)$/);
     if (hslMatch) {
       return Color.fromHSL(
         parseInt(hslMatch[1]),
@@ -299,11 +309,13 @@ export class Color {
    */
   mix(other: Color, amount: number = 0.5): Color {
     const t = Math.max(0, Math.min(1, amount));
+    // a + (b - a) * t can overshoot b by an ulp at t = 1
+    const mixChannel = (a: number, b: number) => (t === 1 ? b : a + (b - a) * t);
     return new Color(
-      this._r + (other._r - this._r) * t,
-      this._g + (other._g - this._g) * t,
-      this._b + (other._b - this._b) * t,
-      this._a + (other._a - this._a) * t
+      mixChannel(this._r, other._r),
+      mixChannel(this._g, other._g),
+      mixChannel(this._b, other._b),
+      mixChannel(this._a, other._a)
     );
   }
 

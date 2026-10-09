@@ -79,7 +79,8 @@ export class GrowthProgress {
     config: GrowthConfig = GrowthProgress.defaultConfig
   ) {
     this._config = config;
-    this._progress = Math.max(0, Math.min(1, progress));
+    // NaN progress (0/0 from a zero duration at time === delay) is "not started"
+    this._progress = Number.isNaN(progress) ? 0 : Math.max(0, Math.min(1, progress));
 
     // Calculate growth phases
     this._stem = Math.min(1, this._progress * config.stemRate);
@@ -118,7 +119,7 @@ export class GrowthProgress {
     duration: number,
     config?: Partial<GrowthConfig>
   ): GrowthProgress {
-    const progress = (time - delay) / duration;
+    const progress = rawGrowthProgress(time, delay, duration);
     return new GrowthProgress(progress, GrowthProgress.mergeConfig(config));
   }
 
@@ -276,10 +277,13 @@ export class GrowthProgress {
     switch (easing) {
       case 'ease-in':
         return t * t;
+      // t(2 - t) is not monotone at ulp scale near 1, and 1 - (1 - t)²
+      // underflows below linear near 0: use each where it is exact enough
+      // (both are 0.75 at t = 0.5)
       case 'ease-out':
-        return t * (2 - t);
+        return t < 0.5 ? t * (2 - t) : 1 - (1 - t) * (1 - t);
       case 'ease-in-out':
-        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+        return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
       case 'linear':
       default:
         return t;
@@ -309,9 +313,9 @@ export class GrowthProgress {
       case 'ease-in':
         return t * t;
       case 'ease-out':
-        return t * (2 - t);
+        return t < 0.5 ? t * (2 - t) : 1 - (1 - t) * (1 - t); // as in eased()
       case 'ease-in-out':
-        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+        return t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
       case 'linear':
       default:
         return t;
@@ -374,8 +378,9 @@ export function calculateGrowthPhases(
   delay: number,
   growDuration: number
 ): GrowthPhases | null {
-  const rawProgress = (time - delay) / growDuration;
-  if (rawProgress <= 0) return null;
+  const rawProgress = rawGrowthProgress(time, delay, growDuration);
+  // NaN progress counts as not started, as in GrowthProgress
+  if (!(rawProgress > 0)) return null;
 
   // Clamp like GrowthProgress/MutableGrowthProgress so all three growth
   // calculators agree on fully-grown plants
@@ -393,12 +398,24 @@ export function calculateGrowthPhases(
  * Check if a plant should be rendered at the given time
  */
 export function isPlantActive(time: number, delay: number): boolean {
-  return time >= delay;
+  // At time === delay progress is 0: not started (as GrowthProgress.isActive)
+  return time > delay;
 }
 
 /**
  * Calculate raw progress (0-1) without phase separation
  */
 export function calculateRawProgress(time: number, delay: number, duration: number): number {
-  return Math.max(0, Math.min(1, (time - delay) / duration));
+  const progress = rawGrowthProgress(time, delay, duration);
+  return Number.isNaN(progress) ? 0 : Math.max(0, Math.min(1, progress));
+}
+
+/**
+ * Unclamped growth progress. From its end time on a plant is exactly fully
+ * grown: (time - delay) / duration can round to just below 1 at
+ * time === delay + duration.
+ */
+export function rawGrowthProgress(time: number, delay: number, duration: number): number {
+  if (time >= delay + duration) return 1;
+  return (time - delay) / duration;
 }

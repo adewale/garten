@@ -1,8 +1,12 @@
 import type { PlantData, ResolvedOptions } from './types';
 import { drawPlant } from './plants';
-import { getPixelRatio, debounce, hexToRgb, DebouncedFunction } from './utils';
+import { getPixelRatio, debounce, DebouncedFunction } from './utils';
+import { Color } from './Color';
 import { ANIMATION, COLORS } from './constants';
 import { GrowthProgressPool } from './GrowthProgressPool';
+
+/** CSS hex color: #rgb, #rrggbb or #rrggbbaa */
+const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 
 /**
  * Handles canvas setup, resizing, and rendering
@@ -36,7 +40,8 @@ export class Renderer {
     width: number;
     height: number;
     gradient: CanvasGradient;
-    fadeStartY: number;
+    fadeBottomY: number;
+    composite: GlobalCompositeOperation;
   } | null = null;
 
   constructor(options: ResolvedOptions) {
@@ -167,8 +172,46 @@ export class Renderer {
   }
 
   /**
-   * Apply vertical gradient fade to make plants fade out at higher positions
-   * This improves content legibility when plants might obscure page content
+   * Parse any CSS color the canvas accepts into RGBA. Hex is parsed
+   * directly; anything else (named, rgb(), hsl(), ...) is normalized by the
+   * 2D context, which ignores invalid assignments — so an unchanged
+   * fillStyle across two different sentinels means the color was rejected.
+   */
+  private parseFadeColor(color: string): { r: number; g: number; b: number; a: number } | null {
+    // Only well-formed CSS hex: Color.fromHex is lenient ('abc' without '#'
+    // parses as #aabbcc), and a canvas would reject such a string
+    const hex = HEX_COLOR.test(color) ? Color.fromHex(color) : null;
+    if (hex) return { r: hex.r, g: hex.g, b: hex.b, a: hex.a };
+
+    const ctx = this.ctx;
+    const previous = ctx.fillStyle;
+    ctx.fillStyle = '#000000';
+    ctx.fillStyle = color;
+    const normalized = String(ctx.fillStyle);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = color;
+    const accepted = String(ctx.fillStyle) === normalized;
+    ctx.fillStyle = previous;
+    if (!accepted) return null;
+
+    const asHex = Color.fromHex(normalized);
+    if (asHex && normalized.startsWith('#')) {
+      return { r: asHex.r, g: asHex.g, b: asHex.b, a: asHex.a };
+    }
+    const match = /^rgba?\(([^)]+)\)$/i.exec(normalized.trim());
+    if (!match) return null;
+    const parts = match[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+    if (parts.length < 3 || parts.some((n) => !Number.isFinite(n))) return null;
+    return { r: parts[0], g: parts[1], b: parts[2], a: parts.length > 3 ? parts[3] : 1 };
+  }
+
+  /**
+   * Fade the tops of plants into fadeColor. The fade zone is the top
+   * `fadeHeight` of the plant area, from the maxHeight line (fully faded)
+   * down to where the fade ends. Painting with 'source-atop' only tints
+   * pixels already drawn, so a transparent canvas stays transparent.
+   * A fully transparent fadeColor (e.g. 'transparent') erases instead,
+   * fading plants out to the page behind the canvas.
    */
   private applyVerticalFade(): void {
     const { fadeHeight, fadeColor, maxHeight } = this.options;
@@ -184,28 +227,28 @@ export class Renderer {
       cache.width !== this.width ||
       cache.height !== this.height
     ) {
-      // Parse fade color to RGB
-      const rgb = hexToRgb(fadeColor);
-      if (!rgb) {
+      const rgba = this.parseFadeColor(fadeColor);
+      if (!rgba) {
         // Don't silently disable the fade the user asked for
         if (!this.warnedInvalidFadeColor) {
           this.warnedInvalidFadeColor = true;
           console.warn(
-            `Garten: fadeColor ${JSON.stringify(fadeColor)} is not a valid hex color; the fade effect is disabled.`
+            `Garten: fadeColor ${JSON.stringify(fadeColor)} is not a valid CSS color; the fade effect is disabled.`
           );
         }
         return;
       }
 
-      // Calculate fade zone positions
-      const plantTopY = this.height * (1 - maxHeight);
-      const fadeStartY = plantTopY;
-      const fadeEndY = Math.max(0, plantTopY - this.height * fadeHeight);
+      // Fade zone: from the top of the plant area down by fadeHeight
+      const fadeTopY = this.height * (1 - maxHeight);
+      const fadeBottomY = Math.min(this.height, fadeTopY + this.height * fadeHeight);
 
-      // Create gradient from fade color (opaque) to transparent
-      const gradient = this.ctx.createLinearGradient(0, fadeEndY, 0, fadeStartY);
-      gradient.addColorStop(0, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 1)`);
-      gradient.addColorStop(1, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0)`);
+      const erase = rgba.a === 0;
+      const { r, g, b } = rgba;
+      const strength = erase ? 1 : rgba.a;
+      const gradient = this.ctx.createLinearGradient(0, fadeTopY, 0, fadeBottomY);
+      gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${strength})`);
+      gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
 
       this.fadeGradientCache = {
         fadeColor,
@@ -214,16 +257,18 @@ export class Renderer {
         width: this.width,
         height: this.height,
         gradient,
-        fadeStartY,
+        fadeBottomY,
+        composite: erase ? 'destination-out' : 'source-atop',
       };
     }
 
-    const { gradient, fadeStartY } = this.fadeGradientCache!;
+    const { gradient, fadeBottomY, composite } = this.fadeGradientCache!;
 
-    // Apply fade using destination-out composite
-    this.ctx.globalCompositeOperation = 'destination-out';
+    // Everything above fadeBottomY: plant parts poking above the maxHeight
+    // line get the full fade (the gradient's first stop extends upward)
+    this.ctx.globalCompositeOperation = composite;
     this.ctx.fillStyle = gradient;
-    this.ctx.fillRect(0, 0, this.width, fadeStartY);
+    this.ctx.fillRect(0, 0, this.width, fadeBottomY);
     this.ctx.globalCompositeOperation = 'source-over';
   }
 

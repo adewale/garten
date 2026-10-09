@@ -1,0 +1,13 @@
+diff --git a/src/plants/generator.ts b/src/plants/generator.ts
+index e12ec1f..3ccfc8e 100644
+--- a/src/plants/generator.ts
++++ b/src/plants/generator.ts
+@@ -587,7 +587,7 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
+ 
+   // Painter's algorithm: draw tallest first so shorter plants render on top
+   // and stay visible in the foreground
+-  plants.sort((a, b) => b.maxHeight - a.maxHeight);
++  plants.sort((a, b) => a.maxHeight - b.maxHeight);
+ 
+   return plants;
+ }
