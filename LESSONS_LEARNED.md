@@ -186,3 +186,11 @@ Numbers from the v1.1.0 testing upgrade (same machine, see `docs/test-suite-benc
 Lesson 2 documented the shallow-merge bug class and its three fixed instances — and the fourth instance shipped anyway, crashing six themes. Prose doesn't execute.
 
 **Lesson:** every entry in this file should end with a pointer to the *mechanism* that enforces it — a helper everyone must use, a type that makes the bug unrepresentable, a test that fails, or a build gate. If a lesson has no mechanism, it is a TODO, not a lesson. (This file now practices what it preaches: lessons 2, 3, 13–19 each name their enforcing test or gate.)
+
+## 21. A Time-Driven State Machine Needs an Executable Clock
+
+The first lifecycle command model replaced `requestAnimationFrame` with a stub that returned IDs but discarded callbacks. It could verify that a frame was requested, but it could never run `tick()`. Elapsed time, speed changes, completion, and loop reset therefore remained untested even though the property looked stateful.
+
+**Lesson:** a test double for a scheduler must model the scheduler's observable semantics. Queue callbacks, advance a monotonic clock explicitly, and assert the state after each executed callback. Also include a command that crosses an important boundary when executed; `maxCommands` is only an upper bound and random frame advances do not guarantee that completion is reached. A generated command is not guaranteed to be selected or executable in every campaign.
+
+`src/Garden.lifecycle.property.test.ts` is the enforcing mechanism. It runs the real controller against a controllable RAF queue, models elapsed time and the single-active-frame invariant, exercises looping and non-looping gardens separately, and includes both incremental `AdvanceFrame` and boundary-crossing `AdvancePastEnd` commands. Removing the production speed multiplier makes the property shrink to `[play,setSpeed(2),advanceFrame(17ms)]`. Independent mutation probes also reject broken loop reset, lost pause position and missing RAF cancellation on destroy.
