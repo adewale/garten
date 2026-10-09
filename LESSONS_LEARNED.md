@@ -225,3 +225,11 @@ Finally, a browser accepted `color(display-p3 1 0 0)` while the fade parser
 rejected its normalised representation. The documentation now lists the
 supported hex/named/RGB/HSL subset, and rejected fade colours are cached so an
 unsupported option does not add parsing work on every frame.
+
+### October 2026: preserve the syntax gate, remove unused globbing
+
+The unpatched braces chain belonged to es-check's file discovery. Garten has
+three known distribution files, so direct Acorn parsing retains the ES2018
+contract without globbing. Verify both rejection (optional chaining and an
+export in a script) and acceptance (ES2018 object spread and module exports);
+a green build alone would not prove the replacement gate still rejects drift.
