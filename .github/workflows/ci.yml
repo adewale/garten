@@ -4,10 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual runs also start the on-demand mutation job below.
   workflow_dispatch:
-  schedule:
-    # Weekly mutation-testing run (Mondays 06:00 UTC)
-    - cron: '0 6 * * 1'
 
 jobs:
   verify:
@@ -20,7 +18,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      # typecheck + vitest (948 tests incl. exhaustive render sweep,
+      # typecheck + vitest (incl. exhaustive render sweep,
       # doc-sync, invariants) + build + es-check dist syntax gate
       - run: npm run verify
 
@@ -49,10 +47,12 @@ jobs:
 
   mutation:
     name: Mutation testing (core boundary)
-    # Too slow for every push: weekly + on demand. The es-check gate and
-    # the vitest suite remain the per-commit gates.
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    # On demand only: 16 weekly runs re-scored unchanged main (73.86%,
+    # ~10 min) and changed no decision. The es-check gate, the vitest suite
+    # and the existing Chromium suites remain the per-change gates.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

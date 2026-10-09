@@ -448,6 +448,27 @@ function getHeightRange(type: PlantType, maxHeight: number): [number, number] {
 }
 
 /**
+ * Largest height <= height whose drawn size (height x multiplier) stays
+ * within maxHeight. maxHeight / multiplier alone can round up by an ulp.
+ */
+function capDrawnHeight(height: number, multiplier: number, maxHeight: number): number {
+  if (!(multiplier > 0)) return Math.min(height, maxHeight);
+  let capped = Math.min(height, maxHeight / multiplier);
+  while (capped * multiplier > maxHeight) capped -= Number.EPSILON * capped;
+  return capped;
+}
+
+/**
+ * Largest duration <= length such that start + duration <= end
+ * (end - start can round so that start + (end - start) > end)
+ */
+function fitWithin(start: number, length: number, end: number): number {
+  let fitted = length;
+  while (start + fitted > end) fitted -= Number.EPSILON * Math.max(fitted, end);
+  return fitted;
+}
+
+/**
  * Generate a random height within range, biased toward max when maxHeight is high
  * This ensures tall gardens actually have plants reaching the top
  */
@@ -538,7 +559,15 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
 
       // Height based on type (biased toward max for tall gardens)
       const [minH, maxH] = getHeightRange(type, maxHeight);
-      const plantHeight = generatePlantHeight(minH, maxH, maxHeight, plantRand);
+      // Renderers draw height x the type's heightMultiplier (up to 1.8x);
+      // cap the stored height so the drawn plant stays within maxHeight
+      const variation = getPlantVariation(type);
+      const { heightMultiplier } = variation;
+      const plantHeight = capDrawnHeight(
+        generatePlantHeight(minH, maxH, maxHeight, plantRand),
+        heightMultiplier,
+        maxHeight
+      );
 
       // Colors - use direct array indexing for speed
       const flowerColorIdx = Math.floor(plantRand() * flowerColors.length);
@@ -552,7 +581,11 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
       const delay = Math.min(rawDelay, duration - minGrowDuration);
       const rawGrowDuration = genDuration * randomRange(0.6, 1.0, plantRand);
       // Ensure plant finishes within animation duration, with minimum to prevent visual artifacts
-      const growDuration = Math.max(minGrowDuration, Math.min(rawGrowDuration, duration - delay));
+      const growDuration = fitWithin(
+        delay,
+        Math.max(minGrowDuration, Math.min(rawGrowDuration, duration - delay)),
+        duration
+      );
 
       // Visual properties
       const petals = 5 + Math.floor(plantRand() * 4);
@@ -562,7 +595,6 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
 
       // Cache category and variation for O(1) lookup during rendering
       const category = plantTypeToCategory.get(type) ?? PlantCategory.SimpleFlower;
-      const variation = getPlantVariation(type);
 
       plants.push({
         id: plantId++,
@@ -593,20 +625,52 @@ export function generatePlants(options: ResolvedOptions): PlantData[] {
 }
 
 /**
- * Number of generations fully completed at a given time, in [0, generations].
+ * Time (seconds) at which each generation is fully grown: every plant in
+ * that generation and all earlier ones has finished growing. Derived from
+ * the plants themselves, so it follows the timing curve; the running max
+ * keeps the times ascending so generation-complete events fire in order.
+ */
+export function getGenerationEndTimes(
+  plants: readonly PlantData[],
+  generations: number,
+  duration: number
+): number[] {
+  const ends: number[] = new Array(Math.max(0, generations)).fill(0);
+  for (const plant of plants) {
+    const g = plant.generation;
+    if (g >= 0 && g < ends.length) {
+      ends[g] = Math.max(ends[g], plant.delay + plant.growDuration);
+    }
+  }
+  for (let g = 0; g < ends.length; g++) {
+    const previous = g > 0 ? ends[g - 1] : 0;
+    // Plants end by `duration`; clamp away floating-point overshoot so the
+    // last generation always completes when the animation does
+    ends[g] = Math.min(duration, Math.max(ends[g], previous));
+  }
+  return ends;
+}
+
+/**
+ * Number of generations fully grown at a given time, in [0, generations].
  * The single source of generation-boundary math — used by Garten for
  * generation-complete events and seek/regenerate tracking.
+ * @param generationEnds - Ascending end times from getGenerationEndTimes()
  */
 export function getCompletedGenerations(
   time: number,
-  duration: number,
-  generations: number
+  generationEnds: readonly number[]
 ): number {
-  if (generations <= 0 || duration <= 0 || !Number.isFinite(time) || time <= 0) {
-    return 0;
+  if (Number.isNaN(time) || time <= 0) return 0;
+  // Binary search for the first generation still growing at `time`
+  let lo = 0;
+  let hi = generationEnds.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (generationEnds[mid] <= time) lo = mid + 1;
+    else hi = mid;
   }
-  const timePerGen = duration / generations;
-  return Math.min(generations, Math.floor(time / timePerGen));
+  return lo;
 }
 
 /**

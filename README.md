@@ -91,14 +91,14 @@ Only `container` is required. Everything else has sensible defaults.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `duration` | `number` | `600` | Total animation time in seconds (10 min) |
-| `maxHeight` | `number` | `0.35` | Max plant height (0-1). Higher values add taller plants (trees at 1.0) |
+| `maxHeight` | `number` | `0.35` | Max plant (stem) height as a fraction of container height (0.05-1). Higher values unlock taller categories (see below) |
 | `density` | `'sparse'` \| `'normal'` \| `'dense'` \| `'lush'` | `'normal'` | How many plants |
 | `colors.accent` | `string` | `'#F6821F'` | Primary accent color (hex) |
 | `colors.palette` | `'natural'` \| `'warm'` \| `'cool'` \| `'vibrant'` \| `'grayscale'` \| `'monotone'` | `'natural'` | Color palette |
-| `categories` | `string[]` | all | Filter to specific plant categories (e.g., `['rose', 'tulip']`) |
+| `categories` | `string[]` | all | Filter to specific plant categories (e.g., `['rose', 'tulip']`; case-insensitive) |
 | `speed` | `number` | `1` | Playback speed multiplier |
 | `loop` | `boolean` | `false` | Restart when complete |
-| `seed` | `number` | random | Fixed seed for reproducible gardens |
+| `seed` | `number` | random | Fixed seed for reproducible gardens (wrapped into [0, 1e9)) |
 
 <details>
 <summary><strong>All options</strong> (click to expand)</summary>
@@ -118,9 +118,9 @@ Only `container` is required. Everything else has sensible defaults.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `maxHeight` | `number` | `0.35` | Max plant height (0-1). Higher values add taller plants (trees at 1.0) |
+| `maxHeight` | `number` | `0.35` | Max plant (stem) height as a fraction of container height (0.05-1). Higher values unlock taller categories (see below) |
 | `density` | `string` | `'normal'` | `'sparse'` \| `'normal'` \| `'dense'` \| `'lush'` |
-| `categories` | `string[]` | all | Filter to specific plant categories |
+| `categories` | `string[]` | all | Filter to specific plant categories (case-insensitive; unknown names are ignored, with a warning outside production) |
 | `colors` | `object` | — | Color configuration (sub-options below) |
 | `colors.accent` | `string` | `'#F6821F'` | Primary accent color |
 | `colors.palette` | `string` | `'natural'` | Color palette preset |
@@ -130,8 +130,8 @@ Only `container` is required. Everything else has sensible defaults.
 | `background` | `string` | `'transparent'` | Canvas background. Any CSS color, or `'transparent'` to let the page show through (works on dark pages) |
 | `opacity` | `number` | `1` | Global opacity (0-1) |
 | `zIndex` | `number` | `-1` | CSS z-index for canvas |
-| `fadeHeight` | `number` | `0` | Fade-out zone height as fraction (0-1) |
-| `fadeColor` | `string` | `'#ffffff'` | Color the fade blends into (match your page background) |
+| `fadeHeight` | `number` | `0` | Height of the fade zone as a fraction of container height (0-1), measured down from the `maxHeight` line |
+| `fadeColor` | `string` | `'#ffffff'` | Hex, named, `rgb()`/`rgba()` or `hsl()`/`hsla()` color the plants blend into at the top of the fade zone; `'transparent'` fades plants out instead |
 
 **Performance:**
 
@@ -149,6 +149,29 @@ Only `container` is required. Everything else has sensible defaults.
 
 The generator uses integer hashing (no floating-point transcendentals), so
 the same seed produces the same garden in every browser and JS engine.
+Seeds are wrapped modulo 1e9 into [0, 1e9), so negative seeds work, and
+seeds that differ by a multiple of 1e9 (for example `-1` and `999999999`)
+produce the same garden. A missing or non-finite seed gets a random one.
+
+**Height and categories:** `maxHeight` caps each plant's stem height (after
+its type's height multiplier); flower heads, spikes and plumes can still rise
+somewhat above that line. Each
+category has a natural height range and appears only when `maxHeight` is at
+least the bottom of that range: tall flowers at 0.30 (so the default 0.35
+includes them), giant grasses at 0.40, climbers and tropical plants at 0.50,
+conifers at 0.55, small trees at 0.60. Higher values also give tall
+categories more weight.
+
+**Fade:** with `fadeHeight > 0`, the top `fadeHeight` of the plant area
+(measured down from the `maxHeight` line) blends plants into `fadeColor`:
+fully `fadeColor` at the `maxHeight` line, no effect at the bottom of the
+zone. Only drawn pixels are tinted, so a transparent canvas stays
+transparent. `fadeColor` accepts hex, named, `rgb()`/`rgba()` and
+`hsl()`/`hsla()` colors. Wide-gamut `color()`, `lab()` and `oklch()` syntax
+is not supported. A fully transparent color such as `'transparent'` fades
+plants out to transparent instead, which works best with the default
+transparent background. An unparseable `fadeColor` logs one warning and
+disables the fade.
 
 **Accessibility:** when `respectReducedMotion` is enabled (the default) and the
 user prefers reduced motion, the garden renders fully grown as a static image.
@@ -166,12 +189,13 @@ garden.stop()              // Stop and reset to beginning
 garden.seek(seconds)       // Jump to specific time (then play() resumes there)
 garden.setSpeed(2)         // Change playback speed (positive finite, clamped to 0.01-100)
 garden.setOptions({...})   // Update options (regenerates plants if needed)
-garden.regenerate()        // Force new random garden
+garden.regenerate()        // Rebuild plants from current options (same seed, same garden)
 garden.destroy()           // Clean up and remove canvas (all later calls are no-ops)
 ```
 
 Note: `container` cannot be changed via `setOptions()` — destroy the instance
-and create a new one instead.
+and create a new one instead. For a different garden, pass a new seed:
+`garden.setOptions({ seed: Math.floor(Math.random() * 1e9) })`.
 
 ### Getters
 
@@ -183,8 +207,8 @@ garden.getElapsedTime()    // Seconds elapsed
 
 ### Events
 
-Two equivalent ways to observe the garden. Constructor callbacks via the
-`events` option:
+Two ways to observe the garden. The `events` option takes four constructor
+callbacks:
 
 ```typescript
 events: {
@@ -195,7 +219,8 @@ events: {
 }
 ```
 
-Or subscribe/unsubscribe at any time:
+`on()`/`once()`/`off()` subscribe and unsubscribe at any time and cover
+nine events, a superset of the four callbacks:
 
 ```typescript
 const off = garden.on('generationComplete', ({ generation, totalGenerations }) => {
@@ -209,9 +234,13 @@ off(); // unsubscribe
 //   | 'generationComplete' | 'stateChange' | 'regenerate' | 'optionsChange'
 ```
 
-`generationComplete` fires once per generation in order, even when several
-generations elapse between frames (e.g. a background tab catching up).
-`seek()` does not fire events for the boundaries it jumps across.
+`generationComplete` (and `onGenerationComplete`) for generation `g` fires
+once every plant in generations 1 to `g` has finished growing, so it follows
+the timing curve and never fires while that generation is still growing. It
+fires once per generation, in order, even when several generations finish
+between frames (e.g. a background tab catching up); the last one fires at
+the end of the duration. `seek()` does not fire events for the boundaries it
+jumps across.
 
 ### Cleanup (Important for SPAs)
 
@@ -233,15 +262,16 @@ window.addEventListener('beforeunload', () => garden.destroy());
 
 ## Timing Curves
 
-Control how generations are paced:
+Control how generations are paced. The curve describes the fraction of
+generations that have started by each point in the animation:
 
 | Curve | Effect |
 |-------|--------|
 | `'linear'` | Even pacing throughout |
-| `'ease-out'` | Fast start, slowing down toward the end |
+| `'ease-out'` | Fast start: new generations arrive quickly at first, then slow down toward the end |
 | `'ease-in'` | Slow start, speeding up toward the end |
 | `'ease-in-out'` | Slow start and end, fast middle |
-| `2.5` | Custom exponent (>1 = ease-out, <1 = ease-in) |
+| `2.5` | Custom exponent `e`: >1 = ease-out of power `e`, <1 = ease-in of power `1/e` (clamped to 0.1-10) |
 
 ## Presets
 
@@ -261,7 +291,7 @@ const garden = new Garten({
 | `default` | Balanced garden with moderate density |
 | `demo` | Fast 30-second animation for demos |
 | `subtle` | Sparse, semi-transparent website background |
-| `lush` | Dense, vibrant garden with max coverage |
+| `lush` | Lush density, 60 generations, plants up to 45% of the height (sets no colors) |
 | `forest` | Tall plants: trees, climbers, giant grasses |
 | `meadow` | Low wildflower meadow with grasses |
 | `roseGarden` | Elegant rose-focused garden |
@@ -289,7 +319,7 @@ const garden = new Garten({
 | `natural` | Balanced, realistic colors (default) |
 | `sunset` | Warm oranges, reds, yellows |
 | `ocean` | Cool blues and greens |
-| `grayscale` | Elegant black and white |
+| `grayscale` | White and gray flowers, gray foliage |
 | `vibrant` | High-saturation colors |
 | `sakura` | Cherry blossom pinks |
 | `lavender` | Purple lavender field |
@@ -377,6 +407,15 @@ import {
 import { PLANT_CATEGORIES } from 'garten';
 ```
 
+The package also exports lower-level utilities for advanced use: the
+`themes`/`presets` records, `GARDEN_EVENT_TYPES`, RNG helpers
+(`seededRandom`, `createRandom`, `SeededRandom`), palettes
+(`flowerPalettes`, `foliagePalettes`), plant lookups (`getPlantCategory`,
+`getPlantVariation`), value objects (`Color`, `Vec2`, `GrowthProgress`,
+`GrowthProgressPool`), drawing helpers (`CanvasHelper`, `drawStem`,
+`drawLeaf`), `EventEmitter`, `Environment` detection helpers, and every
+constant in `constants.ts`. See `src/index.ts` for the full list.
+
 ### Helper Functions
 
 | Function | Description |
@@ -397,7 +436,7 @@ import { PLANT_CATEGORIES } from 'garten';
 // Filter to specific plant categories
 const garden = new Garten({
   container: '#garden',
-  categories: ['rose', 'tulip', 'daisy'], // string names
+  categories: ['rose', 'tulip', 'daisy'], // string names, case-insensitive
 });
 
 // Available categories (19 total):

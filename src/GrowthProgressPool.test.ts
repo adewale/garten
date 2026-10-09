@@ -1,512 +1,412 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as fc from 'fast-check';
 import {
   GrowthProgressPool,
   MutableGrowthProgress,
   getDefaultPool,
   resetDefaultPool,
+  disposeDefaultPool,
 } from './GrowthProgressPool';
-import { GROWTH_PHASES } from './constants';
-import { GrowthProgress } from './GrowthProgress';
+import { GrowthProgress, type GrowthConfig } from './GrowthProgress';
 
-describe('MutableGrowthProgress', () => {
-  describe('calculateMut', () => {
-    it('should calculate correct stem phase', () => {
-      const gp = new MutableGrowthProgress();
-      gp.calculateMut(600, 100, 1000); // progress = 0.5
+// ==================== ARBITRARIES ====================
 
-      expect(gp.progress).toBe(0.5);
-      expect(gp.stem).toBe(Math.min(1, 0.5 * GROWTH_PHASES.STEM_GROWTH_RATE));
-    });
+/** Every double: NaN, ±Infinity, -0, subnormals and extremes included */
+const anyDouble = fc.double();
+const anyConfig: fc.Arbitrary<GrowthConfig> = fc.record({
+  stemRate: anyDouble,
+  leafStart: anyDouble,
+  leafRate: anyDouble,
+  flowerStart: anyDouble,
+  flowerRate: anyDouble,
+});
 
-    it('should calculate correct leaf phase', () => {
-      const gp = new MutableGrowthProgress();
-      gp.calculateMut(500, 100, 1000); // progress = 0.4
+const FIELDS = ['progress', 'stem', 'leaf', 'flower', 'foliage', 'plume'] as const;
+const FLAGS = ['isActive', 'isComplete', 'hasLeaves', 'hasFlower', 'hasFoliage', 'hasPlume'] as const;
 
-      const expectedLeaf = Math.max(
-        0,
-        Math.min(1, (0.4 - GROWTH_PHASES.LEAF_START) * GROWTH_PHASES.LEAF_GROWTH_RATE)
-      );
-      expect(gp.leaf).toBeCloseTo(expectedLeaf);
-    });
+/** Bit-identical fields and identical flags */
+function agrees(m: MutableGrowthProgress, g: GrowthProgress): boolean {
+  return FIELDS.every((k) => Object.is(m[k], g[k])) && FLAGS.every((f) => m[f] === g[f]);
+}
 
-    it('should calculate correct flower phase', () => {
-      const gp = new MutableGrowthProgress();
-      gp.calculateMut(800, 100, 1000); // progress = 0.7
+let warnSpy: ReturnType<typeof vi.spyOn>;
+beforeEach(() => {
+  // Dev-mode pools warn on lifecycle misuse; the properties below drive misuse on purpose
+  warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+});
+afterEach(() => {
+  warnSpy.mockRestore();
+});
 
-      const expectedFlower = Math.max(
-        0,
-        Math.min(1, (0.7 - GROWTH_PHASES.FLOWER_START) * GROWTH_PHASES.FLOWER_GROWTH_RATE)
-      );
-      expect(gp.flower).toBeCloseTo(expectedFlower);
-    });
+// ==================== MUTABLE vs IMMUTABLE ====================
 
-    it('should clamp progress to [0, 1]', () => {
-      const gp = new MutableGrowthProgress();
-
-      gp.calculateMut(50, 100, 1000); // progress = -0.05
-      expect(gp.progress).toBe(0);
-
-      gp.calculateMut(1500, 100, 1000); // progress = 1.4
-      expect(gp.progress).toBe(1);
-    });
-
-    it('should return this for chaining', () => {
-      const gp = new MutableGrowthProgress();
-      const result = gp.calculateMut(500, 100, 1000);
-      expect(result).toBe(gp);
-    });
-
-    it('should calculate foliage phase', () => {
-      const gp = new MutableGrowthProgress();
-      gp.calculateMut(700, 100, 1000); // progress = 0.6
-
-      const expectedFoliage = Math.max(
-        0,
-        (0.6 - GROWTH_PHASES.FOLIAGE_START) * GROWTH_PHASES.FOLIAGE_GROWTH_RATE
-      );
-      expect(gp.foliage).toBeCloseTo(expectedFoliage);
-    });
-
-    it('should calculate plume phase', () => {
-      const gp = new MutableGrowthProgress();
-      gp.calculateMut(1000, 100, 1000); // progress = 0.9
-
-      const expectedPlume =
-        (0.9 - GROWTH_PHASES.PLUME_START) / (1 - GROWTH_PHASES.PLUME_START);
-      expect(gp.plume).toBeCloseTo(expectedPlume);
-    });
-
-    it('should return zero plume when progress is below threshold', () => {
-      const gp = new MutableGrowthProgress();
-      gp.calculateMut(500, 100, 1000); // progress = 0.4
-      expect(gp.plume).toBe(0);
-    });
+describe('Property: MutableGrowthProgress agrees exactly with GrowthProgress', () => {
+  it('calculateMut matches GrowthProgress.calculate bit-for-bit for every (time, delay, duration)', () => {
+    // Hostile values included: negatives, zero duration (0/0 at time === delay), NaN, ±Infinity
+    fc.assert(
+      fc.property(anyDouble, anyDouble, anyDouble, (t, d, dur) => {
+        expect(agrees(new MutableGrowthProgress().calculateMut(t, d, dur), GrowthProgress.calculate(t, d, dur))).toBe(true);
+      }),
+      { numRuns: 5, examples: [[100, 100, 0], [0, 0, 0], [NaN, 0, 1], [1, 0, -0]] }
+    );
   });
 
-  describe('reset', () => {
-    it('should reset all values to zero', () => {
-      const gp = new MutableGrowthProgress();
-      gp.calculateMut(800, 100, 1000);
-      gp.reset();
+  it('agreement holds for every config, on a reused (dirty) object, and through the pool', () => {
+    fc.assert(
+      fc.property(anyDouble, anyDouble, anyDouble, anyConfig, anyDouble, (t, d, dur, cfg, junk) => {
+        const expected = GrowthProgress.calculate(t, d, dur, cfg);
+        const dirty = new MutableGrowthProgress();
+        for (const k of FIELDS) dirty[k] = junk;
+        expect(agrees(dirty.calculateMut(t, d, dur, cfg), expected)).toBe(true);
 
-      expect(gp.progress).toBe(0);
-      expect(gp.stem).toBe(0);
-      expect(gp.leaf).toBe(0);
-      expect(gp.flower).toBe(0);
-      expect(gp.foliage).toBe(0);
-      expect(gp.plume).toBe(0);
-    });
-
-    it('should return this for chaining', () => {
-      const gp = new MutableGrowthProgress();
-      const result = gp.reset();
-      expect(result).toBe(gp);
-    });
+        const pool = new GrowthProgressPool({ initialSize: 1, devMode: false });
+        pool.beginFrame();
+        expect(agrees(pool.acquireAndCalculate(t, d, dur, cfg), expected)).toBe(true);
+        pool.endFrame();
+      }),
+      { numRuns: 5 }
+    );
   });
 
-  describe('boolean getters', () => {
-    it('should return correct isActive', () => {
-      const gp = new MutableGrowthProgress();
-      gp.progress = 0;
-      expect(gp.isActive).toBe(false);
-      gp.progress = 0.1;
-      expect(gp.isActive).toBe(true);
-    });
-
-    it('should return correct isComplete', () => {
-      const gp = new MutableGrowthProgress();
-      gp.progress = 0.99;
-      expect(gp.isComplete).toBe(false);
-      gp.progress = 1;
-      expect(gp.isComplete).toBe(true);
-    });
-
-    it('should return correct hasLeaves', () => {
-      const gp = new MutableGrowthProgress();
-      gp.leaf = 0;
-      expect(gp.hasLeaves).toBe(false);
-      gp.leaf = 0.01;
-      expect(gp.hasLeaves).toBe(true);
-    });
-
-    it('should return correct hasFlower', () => {
-      const gp = new MutableGrowthProgress();
-      gp.flower = 0;
-      expect(gp.hasFlower).toBe(false);
-      gp.flower = 0.01;
-      expect(gp.hasFlower).toBe(true);
-    });
-
-    it('should return correct hasFoliage', () => {
-      const gp = new MutableGrowthProgress();
-      gp.foliage = 0;
-      expect(gp.hasFoliage).toBe(false);
-      gp.foliage = 0.01;
-      expect(gp.hasFoliage).toBe(true);
-    });
-
-    it('should return correct hasPlume', () => {
-      const gp = new MutableGrowthProgress();
-      gp.plume = 0;
-      expect(gp.hasPlume).toBe(false);
-      gp.plume = 0.01;
-      expect(gp.hasPlume).toBe(true);
-    });
+  it('calculateMut and reset return the same instance; reset zeroes every field', () => {
+    fc.assert(
+      fc.property(anyDouble, anyDouble, anyDouble, (t, d, dur) => {
+        const m = new MutableGrowthProgress();
+        expect(m.calculateMut(t, d, dur)).toBe(m);
+        expect(m.reset()).toBe(m);
+        expect(FIELDS.map((k) => m[k])).toEqual([0, 0, 0, 0, 0, 0]);
+      }),
+      { numRuns: 5 }
+    );
   });
 });
 
-describe('GrowthProgressPool', () => {
-  let pool: GrowthProgressPool;
+// ==================== LIFECYCLE MODEL ====================
 
-  beforeEach(() => {
-    pool = new GrowthProgressPool({ initialSize: 10, devMode: true });
+type Cmd =
+  | { kind: 'begin' }
+  | { kind: 'end' }
+  | { kind: 'acquire'; count: number; time: number }
+  | { kind: 'reset' };
+
+const cmdArb: fc.Arbitrary<Cmd> = fc.oneof(
+  { weight: 3, arbitrary: fc.constant({ kind: 'begin' as const }) },
+  { weight: 3, arbitrary: fc.constant({ kind: 'end' as const }) },
+  {
+    weight: 5,
+    arbitrary: fc.record({
+      kind: fc.constant('acquire' as const),
+      count: fc.integer({ min: 1, max: 40 }),
+      time: fc.double({ min: -100, max: 2000, noNaN: true }),
+    }),
+  },
+  { weight: 1, arbitrary: fc.constant({ kind: 'reset' as const }) }
+);
+
+/**
+ * Pool config for the lifecycle model. growthFactor starts at 1.5 with
+ * initialSize >= 2 so that floor(size * factor) > size: the growth-stall
+ * region is owned by the capacity property below.
+ */
+const lifecycleConfig = fc.record({
+  initialSize: fc.integer({ min: 2, max: 64 }),
+  growthFactor: fc.double({ min: 1.5, max: 4, noNaN: true }),
+  devMode: fc.boolean(),
+  strictMode: fc.option(fc.boolean(), { nil: undefined }),
+  shrinkThreshold: fc.double({ min: 0.01, max: 0.99, noNaN: true }),
+  lowUsageFramesBeforeShrink: fc.integer({ min: 1, max: 5 }),
+  maxSize: fc.constant(1_000_000),
+});
+
+describe('Property: frame lifecycle matches a reference model', () => {
+  it('stats, frame numbers, history, resets and lifecycle errors follow the model for any command sequence', () => {
+    fc.assert(
+      fc.property(lifecycleConfig, fc.array(cmdArb, { maxLength: 60 }), (config, cmds) => {
+        const pool = new GrowthProgressPool(config);
+        const strict = config.strictMode ?? config.devMode;
+        const throwOnAcquireOutside = config.devMode || strict;
+
+        // Model
+        let frame = 0, inFrame = false, acquired = 0, released = 0, peak = 0;
+        let live: MutableGrowthProgress[] = [];
+        let history: Array<[number, number]> = [];
+        // currentFrameUsage keeps reporting the last frame's count after
+        // endFrame (it is zeroed by the next beginFrame), so track it apart
+        // from the live objects
+        let usage = 0;
+
+        const beginModel = () => { frame++; inFrame = true; live = []; usage = 0; };
+
+        for (const cmd of cmds) {
+          if (cmd.kind === 'begin') {
+            if (inFrame && strict) {
+              expect(() => pool.beginFrame()).toThrow(/already in frame/);
+            } else {
+              pool.beginFrame();
+              beginModel();
+            }
+          } else if (cmd.kind === 'end') {
+            if (!inFrame) {
+              if (strict) expect(() => pool.endFrame()).toThrow(/outside of frame/);
+              else pool.endFrame(); // documented no-op
+            } else {
+              const sizeBefore = pool.getStats().poolSize;
+              pool.endFrame();
+              const usage = live.length;
+              peak = Math.max(peak, usage);
+              released += usage;
+              history.push([frame, usage]);
+              inFrame = false;
+              // Auto-release: every object handed out this frame is reset
+              for (const obj of live) expect(FIELDS.map((k) => obj[k])).toEqual([0, 0, 0, 0, 0, 0]);
+              // Never shrink after a frame that used at least the threshold fraction
+              if (usage / sizeBefore >= config.shrinkThreshold) {
+                expect(pool.getStats().poolSize).toBe(sizeBefore);
+              }
+              live = [];
+            }
+          } else if (cmd.kind === 'acquire') {
+            if (!inFrame && throwOnAcquireOutside) {
+              expect(() => pool.acquire()).toThrow(/outside of frame/);
+            } else {
+              if (!inFrame) beginModel(); // non-strict production self-heals
+              for (let i = 0; i < cmd.count; i++) {
+                const obj = pool.acquireAndCalculate(cmd.time + i, 0, 1000);
+                expect(obj).toBeInstanceOf(MutableGrowthProgress);
+                expect(live.includes(obj), 'object handed out twice in one frame').toBe(false);
+                expect(agrees(obj, GrowthProgress.calculate(cmd.time + i, 0, 1000))).toBe(true);
+                live.push(obj);
+                usage++;
+                acquired++;
+              }
+            }
+          } else {
+            pool.reset();
+            frame = 0; inFrame = false; acquired = 0; released = 0; peak = 0;
+            live = []; history = []; usage = 0;
+            expect(pool.getStats().poolSize).toBe(config.initialSize);
+          }
+
+          const stats = pool.getStats();
+          expect({
+            acquired: stats.acquired, released: stats.released, peakUsage: stats.peakUsage,
+            currentFrameUsage: stats.currentFrameUsage, frame: pool.getFrameNumber(), inFrame: pool.isInFrame(),
+          }).toEqual({
+            acquired, released, peakUsage: peak, currentFrameUsage: usage, frame, inFrame,
+          });
+          expect(stats.poolSize).toBeGreaterThanOrEqual(Math.max(config.initialSize, live.length));
+          const h = pool.getFrameHistory();
+          expect(h.map((e) => [e.frameNumber, e.usage])).toEqual(history.slice(-60));
+          for (let i = 1; i < h.length; i++) expect(h[i].timestamp).toBeGreaterThanOrEqual(h[i - 1].timestamp);
+        }
+      }),
+      { numRuns: 5 }
+    );
   });
 
-  describe('constructor', () => {
-    it('should create pool with specified initial size', () => {
-      const stats = pool.getStats();
-      expect(stats.poolSize).toBe(10);
-    });
-
-    it('should default to 1024 initial size', () => {
-      const defaultPool = new GrowthProgressPool({ devMode: false });
-      expect(defaultPool.getStats().poolSize).toBe(1024);
-    });
-
-    it('should initialize all statistics to zero', () => {
-      const stats = pool.getStats();
-      expect(stats.acquired).toBe(0);
-      expect(stats.released).toBe(0);
-      expect(stats.peakUsage).toBe(0);
-      expect(stats.growthEvents).toBe(0);
-      expect(stats.currentFrameUsage).toBe(0);
-    });
+  it('frame history keeps the latest 60 frames in chronological order', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 200 }), (frames) => {
+        const pool = new GrowthProgressPool({ initialSize: 4, devMode: false });
+        for (let f = 0; f < frames; f++) {
+          pool.beginFrame();
+          for (let i = 0; i < f % 3; i++) pool.acquire();
+          pool.endFrame();
+        }
+        const h = pool.getFrameHistory();
+        const first = Math.max(1, frames - 59);
+        expect(h.map((e) => e.frameNumber)).toEqual(Array.from({ length: frames - first + 1 }, (_, i) => first + i));
+        expect(h.map((e) => e.usage)).toEqual(h.map((e) => (e.frameNumber - 1) % 3));
+      }),
+      { numRuns: 5 }
+    );
   });
+});
 
-  describe('beginFrame / endFrame', () => {
-    it('should track frame number', () => {
-      expect(pool.getFrameNumber()).toBe(0);
-      pool.beginFrame();
-      pool.endFrame();
-      expect(pool.getFrameNumber()).toBe(1);
-    });
+// ==================== CAPACITY ====================
 
-    it('should increment frame number on each beginFrame', () => {
-      pool.beginFrame();
-      pool.endFrame();
-      pool.beginFrame();
-      pool.endFrame();
-      pool.beginFrame();
-      pool.endFrame();
-      expect(pool.getFrameNumber()).toBe(3);
-    });
-
-    it('should track inFrame state', () => {
-      expect(pool.isInFrame()).toBe(false);
-      pool.beginFrame();
-      expect(pool.isInFrame()).toBe(true);
-      pool.endFrame();
-      expect(pool.isInFrame()).toBe(false);
-    });
-
-    it('should reset all acquired objects on endFrame', () => {
-      pool.beginFrame();
-      const obj1 = pool.acquire();
-      const obj2 = pool.acquire();
-      obj1.calculateMut(500, 0, 1000);
-      obj2.calculateMut(800, 0, 1000);
-
-      expect(obj1.progress).toBe(0.5);
-      expect(obj2.progress).toBe(0.8);
-
-      pool.endFrame();
-
-      // Objects should be reset
-      expect(obj1.progress).toBe(0);
-      expect(obj2.progress).toBe(0);
-    });
-
-    it('should reset acquire index on beginFrame', () => {
-      pool.beginFrame();
-      pool.acquire();
-      pool.acquire();
-      expect(pool.getStats().currentFrameUsage).toBe(2);
-      pool.endFrame();
-
-      pool.beginFrame();
-      expect(pool.getStats().currentFrameUsage).toBe(0);
-      pool.endFrame();
-    });
-  });
-
-  describe('acquire', () => {
-    it('should throw if called outside frame (dev mode)', () => {
-      expect(() => pool.acquire()).toThrow(/outside of frame/);
-    });
-
-    it('should return MutableGrowthProgress instance', () => {
-      pool.beginFrame();
-      const obj = pool.acquire();
-      expect(obj).toBeInstanceOf(MutableGrowthProgress);
-      pool.endFrame();
-    });
-
-    it('should reuse objects across frames', () => {
-      pool.beginFrame();
-      const first = pool.acquire();
-      const firstRef = first;
-      pool.endFrame();
-
-      pool.beginFrame();
-      const second = pool.acquire();
-      expect(second).toBe(firstRef);
-      pool.endFrame();
-    });
-
-    it('should provide distinct objects within same frame', () => {
-      pool.beginFrame();
-      const obj1 = pool.acquire();
-      const obj2 = pool.acquire();
-      expect(obj1).not.toBe(obj2);
-      pool.endFrame();
-    });
-
-    it('should increment currentFrameUsage', () => {
-      pool.beginFrame();
-      expect(pool.getStats().currentFrameUsage).toBe(0);
-      pool.acquire();
-      expect(pool.getStats().currentFrameUsage).toBe(1);
-      pool.acquire();
-      expect(pool.getStats().currentFrameUsage).toBe(2);
-      pool.endFrame();
-    });
-  });
-
-  describe('acquireAndCalculate', () => {
-    it('should acquire and calculate in one step', () => {
-      pool.beginFrame();
-      const obj = pool.acquireAndCalculate(500, 0, 1000);
-      expect(obj.progress).toBe(0.5);
-      pool.endFrame();
-    });
-
-    it('should return the acquired object', () => {
-      pool.beginFrame();
-      const obj = pool.acquireAndCalculate(500, 0, 1000);
-      expect(obj).toBeInstanceOf(MutableGrowthProgress);
-      pool.endFrame();
-    });
-  });
-
-  describe('pool growth', () => {
-    it('should grow when exhausted', () => {
-      const smallPool = new GrowthProgressPool({
-        initialSize: 2,
-        growthFactor: 2,
-        devMode: false,
-      });
-      smallPool.beginFrame();
-
-      smallPool.acquire();
-      smallPool.acquire();
-      expect(smallPool.getStats().poolSize).toBe(2);
-
-      smallPool.acquire(); // Should trigger growth
-      expect(smallPool.getStats().poolSize).toBe(4);
-      expect(smallPool.getStats().growthEvents).toBe(1);
-
-      smallPool.endFrame();
-    });
-
-    it('should use specified growth factor', () => {
-      const smallPool = new GrowthProgressPool({
-        initialSize: 4,
-        growthFactor: 3,
-        devMode: false,
-      });
-      smallPool.beginFrame();
-
-      for (let i = 0; i < 5; i++) {
-        smallPool.acquire();
-      }
-
-      expect(smallPool.getStats().poolSize).toBe(12); // 4 * 3
-      smallPool.endFrame();
-    });
-  });
-
-  describe('statistics', () => {
-    it('should track peak usage', () => {
-      pool.beginFrame();
-      pool.acquire();
-      pool.acquire();
-      pool.acquire();
-      pool.endFrame();
-
-      pool.beginFrame();
-      pool.acquire();
-      pool.endFrame();
-
-      expect(pool.getStats().peakUsage).toBe(3);
-    });
-
-    it('should track total acquired', () => {
-      pool.beginFrame();
-      pool.acquire();
-      pool.acquire();
-      pool.endFrame();
-
-      pool.beginFrame();
-      pool.acquire();
-      pool.endFrame();
-
-      expect(pool.getStats().acquired).toBe(3);
-    });
-
-    it('should track total released', () => {
-      pool.beginFrame();
-      pool.acquire();
-      pool.acquire();
-      pool.endFrame();
-
-      pool.beginFrame();
-      pool.acquire();
-      pool.endFrame();
-
-      expect(pool.getStats().released).toBe(3);
-    });
-
-    it('should have acquired equal released after complete frames', () => {
-      pool.beginFrame();
-      pool.acquire();
-      pool.acquire();
-      pool.endFrame();
-
-      const stats = pool.getStats();
-      expect(stats.acquired).toBe(stats.released);
-    });
-  });
-
-  describe('dev mode diagnostics', () => {
-    it('should warn on nested beginFrame', () => {
-      // Use devMode without strictMode to get warnings instead of throws
-      const warnPool = new GrowthProgressPool({ initialSize: 10, devMode: true, strictMode: false });
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      warnPool.beginFrame();
-      warnPool.beginFrame();
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('already in frame')
+describe('Property: capacity at and beyond maxSize', () => {
+  it('a frame can hold exactly maxSize distinct objects; one more throws', () => {
+    // Documented: maxSize is the "Maximum pool size - throws if exceeded".
+    // maxSize is bounded where it is materialized (one object per slot).
+    const capacityConfig = fc
+      .integer({ min: 1, max: 3000 })
+      .chain((maxSize) =>
+        fc.record({
+          maxSize: fc.constant(maxSize),
+          initialSize: fc.integer({ min: 1, max: maxSize }),
+          growthFactor: fc.double({ min: 1.1, max: 4, noNaN: true }),
+        })
       );
-      warnSpy.mockRestore();
-      warnPool.endFrame();
-    });
-
-    it('should warn on endFrame outside frame', () => {
-      // Use devMode without strictMode to get warnings instead of throws
-      const warnPool = new GrowthProgressPool({ initialSize: 10, devMode: true, strictMode: false });
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      warnPool.endFrame();
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('outside of frame')
-      );
-      warnSpy.mockRestore();
-    });
-
-    it('should detect use-after-release', () => {
-      pool.beginFrame();
-      const obj = pool.acquire();
-      pool.endFrame();
-
-      pool.beginFrame();
-      // Object was released (reset) on previous endFrame
-      expect(() => pool.validateObject(obj)).toThrow(/Use-after-release|Stale object/);
-      pool.endFrame();
-    });
-
-    it('should detect stale objects from previous frame', () => {
-      pool.beginFrame();
-      const obj = pool.acquire();
-      pool.endFrame();
-
-      // After endFrame, object is reset so _released is true
-      // validateObject should throw use-after-release
-      pool.beginFrame();
-      expect(() => pool.validateObject(obj)).toThrow(/Use-after-release/);
-      pool.endFrame();
-    });
-  });
-
-  describe('detectLeaks', () => {
-    it('should return empty array when no leaks', () => {
-      pool.beginFrame();
-      pool.acquire();
-      pool.endFrame();
-
-      expect(pool.detectLeaks()).toEqual([]);
-    });
-
-    it('should detect unreleased objects when frame not properly ended', () => {
-      // Use strictMode: false to allow nested beginFrame without throwing
-      const leakPool = new GrowthProgressPool({ initialSize: 10, devMode: true, strictMode: false });
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-      leakPool.beginFrame();
-      leakPool.acquire();
-      // Don't call endFrame - simulate improper frame ending
-
-      // Manually move to next frame (simulating a bug where endFrame was skipped)
-      leakPool.beginFrame(); // This starts frame 2
-
-      // Object from frame 1 should be detected as a leak
-      const leaks = leakPool.detectLeaks();
-      expect(leaks.length).toBe(1);
-      expect(leaks[0].frameAcquired).toBe(1);
-      leakPool.endFrame();
-      warnSpy.mockRestore();
-    });
-  });
-
-  describe('reset', () => {
-    it('should reset pool to initial state', () => {
-      pool.beginFrame();
-      pool.acquire();
-      pool.acquire();
-      pool.endFrame();
-
-      pool.reset();
-
-      const stats = pool.getStats();
-      expect(stats.poolSize).toBe(10);
-      expect(stats.acquired).toBe(0);
-      expect(stats.released).toBe(0);
-      expect(stats.peakUsage).toBe(0);
-      expect(pool.getFrameNumber()).toBe(0);
-    });
-
-    it('should shrink pool back to initial size if grown', () => {
-      const smallPool = new GrowthProgressPool({
-        initialSize: 2,
-        growthFactor: 2,
-        devMode: false,
-      });
-
-      smallPool.beginFrame();
-      for (let i = 0; i < 10; i++) {
-        smallPool.acquire();
+    fc.assert(
+      fc.property(capacityConfig, (config) => {
+        const pool = new GrowthProgressPool({ ...config, devMode: false, strictMode: false });
+        pool.beginFrame();
+        const seen = new Set<MutableGrowthProgress>();
+        for (let i = 0; i < config.maxSize; i++) {
+          const obj = pool.acquire();
+          expect(obj, `acquire #${i + 1} of ${config.maxSize}`).toBeInstanceOf(MutableGrowthProgress);
+          seen.add(obj);
+        }
+        expect(seen.size).toBe(config.maxSize);
+        expect(() => pool.acquire()).toThrow(/Maximum size/);
+      }),
+      {
+        numRuns: 5,
+        examples: [
+          // floor(1 * 1.1) === 1: the pool never grows and acquire() returns undefined
+          [{ maxSize: 2, initialSize: 1, growthFactor: 1.1 }],
+          // 1000 -> 2000 -> 4000 overshoots maxSize 3000 and throws at 2001 objects
+          [{ maxSize: 3000, initialSize: 1000, growthFactor: 2 }],
+        ],
       }
-      smallPool.endFrame();
+    );
+  });
 
-      expect(smallPool.getStats().poolSize).toBeGreaterThan(2);
+  it('the shipped default pool covers the worst legal configuration (32,768 objects)', () => {
+    const pool = new GrowthProgressPool({ devMode: false });
+    pool.beginFrame();
+    for (let i = 0; i < 32768; i++) pool.acquire();
+    expect(pool.getStats().poolSize).toBe(32768);
+    expect(() => pool.acquire()).toThrow(/Maximum size 32768 exceeded/);
+  });
 
-      smallPool.reset();
-      expect(smallPool.getStats().poolSize).toBe(2);
-    });
+  it('the constructor sanitizes any numeric config and the pool then serves a frame', () => {
+    // Sizes are bounded where materialized: the constructor pre-allocates initialSize objects
+    const knob = fc.option(
+      fc.oneof(fc.double({ min: -1e4, max: 1e4 }), fc.constantFrom(NaN, Infinity, -Infinity, 0, -0, 0.5, 1.5)),
+      { nil: undefined }
+    );
+    fc.assert(
+      fc.property(
+        fc.record({
+          initialSize: knob,
+          growthFactor: knob,
+          maxSizeWarning: knob,
+          maxSize: knob,
+          shrinkThreshold: knob,
+          lowUsageFramesBeforeShrink: knob,
+          devMode: fc.boolean(),
+        }, { requiredKeys: ['devMode'] }),
+        (config) => {
+          const pool = new GrowthProgressPool(config);
+          pool.beginFrame();
+          expect(pool.acquire()).toBeInstanceOf(MutableGrowthProgress);
+          pool.endFrame();
+          expect(Number.isInteger(pool.getStats().poolSize)).toBe(true);
+        }
+      ),
+      // new Array(1.5) throws RangeError: fractional sizes are not rounded
+      { numRuns: 5, examples: [[{ initialSize: 1.5, devMode: false }]] }
+    );
+  });
+});
 
-    it('should reset inFrame state', () => {
+// ==================== EXAMPLES (diagnostics and singletons) ====================
+
+describe('GrowthProgressPool examples', () => {
+  it('defaults to 1024 pre-allocated objects', () => {
+    expect(new GrowthProgressPool({ devMode: false }).getStats().poolSize).toBe(1024);
+  });
+
+  it('grows by the growth factor when exhausted', () => {
+    const pool = new GrowthProgressPool({ initialSize: 4, growthFactor: 3, devMode: false });
+    pool.beginFrame();
+    for (let i = 0; i < 5; i++) pool.acquire();
+    expect(pool.getStats()).toMatchObject({ poolSize: 12, growthEvents: 1 });
+    pool.endFrame();
+  });
+
+  it('allocates nothing after warm-up: sustained frames reuse the same instances', () => {
+    const pool = new GrowthProgressPool({ initialSize: 10, devMode: true });
+    const PER_FRAME = 500;
+    pool.beginFrame();
+    const warmUp = new Set<MutableGrowthProgress>();
+    for (let i = 0; i < PER_FRAME; i++) warmUp.add(pool.acquireAndCalculate(i, 0, 1000));
+    pool.endFrame();
+    const { poolSize, growthEvents } = pool.getStats();
+    for (let frame = 0; frame < 50; frame++) {
       pool.beginFrame();
-      pool.reset();
-      expect(pool.isInFrame()).toBe(false);
+      for (let i = 0; i < PER_FRAME; i++) {
+        if (!warmUp.has(pool.acquireAndCalculate(frame * 16 + i, 0, 1000))) {
+          throw new Error(`frame ${frame} acquire ${i} returned a new object`);
+        }
+      }
+      pool.endFrame();
+    }
+    expect(pool.getStats()).toMatchObject({ poolSize, growthEvents });
+  });
+
+  it('shrinks after sustained low usage, but never below the initial size', () => {
+    const pool = new GrowthProgressPool({
+      initialSize: 64, devMode: false, shrinkThreshold: 0.25, lowUsageFramesBeforeShrink: 5,
     });
+    pool.beginFrame();
+    for (let i = 0; i < 200; i++) pool.acquire();
+    pool.endFrame();
+    const grown = pool.getStats().poolSize;
+    for (let f = 0; f < 40; f++) {
+      pool.beginFrame();
+      pool.acquire();
+      pool.endFrame();
+    }
+    expect(pool.getStats().poolSize).toBeLessThan(grown);
+    expect(pool.getStats().poolSize).toBe(64);
+  });
+
+  it('warns (without throwing) on lifecycle misuse in dev mode without strict mode', () => {
+    const pool = new GrowthProgressPool({ initialSize: 10, devMode: true, strictMode: false });
+    pool.beginFrame();
+    pool.beginFrame();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('already in frame'));
+    pool.endFrame();
+    pool.endFrame();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('outside of frame'));
+  });
+
+  it('validateObject detects use-after-release and foreign objects in dev mode', () => {
+    const pool = new GrowthProgressPool({ initialSize: 10, devMode: true });
+    const other = new GrowthProgressPool({ initialSize: 10, devMode: true });
+    pool.beginFrame();
+    other.beginFrame();
+    const obj = pool.acquire();
+    expect(pool.validateObject(obj)).toBe(true);
+    expect(() => other.validateObject(obj)).toThrow(/not from this pool/);
+    pool.endFrame();
+    pool.beginFrame();
+    expect(() => pool.validateObject(obj)).toThrow(/Use-after-release/);
+    pool.endFrame();
+    other.endFrame();
+    expect(new GrowthProgressPool({ initialSize: 1, devMode: false }).validateObject(obj)).toBe(true);
+  });
+
+  it('detectLeaks reports objects from a frame that was never ended', () => {
+    const pool = new GrowthProgressPool({ initialSize: 10, devMode: true, strictMode: false });
+    pool.beginFrame();
+    pool.acquire();
+    pool.endFrame();
+    expect(pool.detectLeaks()).toEqual([]);
+
+    pool.beginFrame(); // frame 2
+    pool.acquire();
+    pool.beginFrame(); // frame 3 without ending frame 2
+    const leaks = pool.detectLeaks();
+    expect(leaks).toHaveLength(1);
+    expect(leaks[0].frameAcquired).toBe(2);
+    pool.endFrame();
+    expect(new GrowthProgressPool({ initialSize: 1, devMode: false }).detectLeaks()).toEqual([]);
+  });
+
+  it('isolates state between pool instances', () => {
+    const a = new GrowthProgressPool({ initialSize: 10, devMode: true });
+    const b = new GrowthProgressPool({ initialSize: 10, devMode: true });
+    a.beginFrame();
+    b.beginFrame();
+    expect(a.acquire()).not.toBe(b.acquire());
+    a.endFrame();
+    expect(a.isInFrame()).toBe(false);
+    expect(b.isInFrame()).toBe(true);
+    b.endFrame();
   });
 });
 
@@ -515,290 +415,25 @@ describe('Default pool', () => {
     resetDefaultPool();
   });
 
-  it('should return singleton instance', () => {
-    const pool1 = getDefaultPool();
-    const pool2 = getDefaultPool();
-    expect(pool1).toBe(pool2);
-  });
-
-  it('should be resetable', () => {
+  it('is a lazily created singleton that resetDefaultPool resets in place', () => {
     const pool = getDefaultPool();
+    expect(getDefaultPool()).toBe(pool);
     pool.beginFrame();
     pool.acquire();
     pool.endFrame();
-
     expect(pool.getStats().acquired).toBe(1);
-
     resetDefaultPool();
-
     expect(pool.getStats().acquired).toBe(0);
   });
-});
 
-describe('MutableGrowthProgress equivalence to GrowthProgress', () => {
-  it('should produce identical results to immutable GrowthProgress', () => {
-    const testCases = [
-      { time: 0, delay: 100, duration: 1000 },
-      { time: 100, delay: 100, duration: 1000 },
-      { time: 350, delay: 100, duration: 1000 },
-      { time: 600, delay: 100, duration: 1000 },
-      { time: 1100, delay: 100, duration: 1000 },
-      { time: 2000, delay: 100, duration: 1000 },
-    ];
-
-    for (const { time, delay, duration } of testCases) {
-      const immutable = GrowthProgress.calculate(time, delay, duration);
-      const mutable = new MutableGrowthProgress().calculateMut(time, delay, duration);
-
-      expect(mutable.progress).toBeCloseTo(immutable.progress, 10);
-      expect(mutable.stem).toBeCloseTo(immutable.stem, 10);
-      expect(mutable.leaf).toBeCloseTo(immutable.leaf, 10);
-      expect(mutable.flower).toBeCloseTo(immutable.flower, 10);
-      expect(mutable.foliage).toBeCloseTo(immutable.foliage, 10);
-      expect(mutable.plume).toBeCloseTo(immutable.plume, 10);
-
-      expect(mutable.isActive).toBe(immutable.isActive);
-      expect(mutable.isComplete).toBe(immutable.isComplete);
-      expect(mutable.hasLeaves).toBe(immutable.hasLeaves);
-      expect(mutable.hasFlower).toBe(immutable.hasFlower);
-      expect(mutable.hasFoliage).toBe(immutable.hasFoliage);
-      expect(mutable.hasPlume).toBe(immutable.hasPlume);
-    }
-  });
-
-  it('should maintain phase ordering invariant (stem >= flower)', () => {
-    const mutable = new MutableGrowthProgress();
-
-    for (let p = 0; p <= 1; p += 0.05) {
-      mutable.calculateMut(p * 1000 + 100, 100, 1000);
-      expect(mutable.stem).toBeGreaterThanOrEqual(mutable.flower);
-    }
-  });
-
-  it('should clamp all phases to [0, 1]', () => {
-    const mutable = new MutableGrowthProgress();
-
-    for (let p = -0.5; p <= 1.5; p += 0.1) {
-      mutable.calculateMut(p * 1000 + 100, 100, 1000);
-
-      expect(mutable.progress).toBeGreaterThanOrEqual(0);
-      expect(mutable.progress).toBeLessThanOrEqual(1);
-      expect(mutable.stem).toBeGreaterThanOrEqual(0);
-      expect(mutable.stem).toBeLessThanOrEqual(1);
-      expect(mutable.leaf).toBeGreaterThanOrEqual(0);
-      expect(mutable.leaf).toBeLessThanOrEqual(1);
-      expect(mutable.flower).toBeGreaterThanOrEqual(0);
-      expect(mutable.flower).toBeLessThanOrEqual(1);
-      expect(mutable.foliage).toBeGreaterThanOrEqual(0);
-      expect(mutable.foliage).toBeLessThanOrEqual(1);
-      expect(mutable.plume).toBeGreaterThanOrEqual(0);
-      expect(mutable.plume).toBeLessThanOrEqual(1);
-    }
-  });
-
-  it('should clamp foliage to maximum of 1 at full progress', () => {
-    // This specifically tests the bug where (1.0 - 0.4) * 1.7 = 1.02 > 1
-    const mutable = new MutableGrowthProgress();
-    mutable.calculateMut(1100, 100, 1000); // progress = 1.0
-
-    expect(mutable.foliage).toBeLessThanOrEqual(1);
-    expect(mutable.foliage).toBeCloseTo(1, 5);
-  });
-});
-
-// ==================== NEW FEATURE TESTS ====================
-
-describe('Pool shrinking', () => {
-  it('should shrink when usage drops below threshold for sustained period', () => {
-    const pool = new GrowthProgressPool({
-      initialSize: 64,
-      devMode: false,
-      shrinkThreshold: 0.25,
-      lowUsageFramesBeforeShrink: 5,
-    });
-
-    // Force growth by using many objects
-    pool.beginFrame();
-    for (let i = 0; i < 200; i++) {
-      pool.acquire();
-    }
-    pool.endFrame();
-
-    const grownSize = pool.getStats().poolSize;
-    expect(grownSize).toBeGreaterThan(64);
-
-    // Run several frames with low usage
-    for (let f = 0; f < 10; f++) {
-      pool.beginFrame();
-      pool.acquire(); // Only 1 object - below 25% threshold
-      pool.endFrame();
-    }
-
-    expect(pool.getStats().poolSize).toBeLessThan(grownSize);
-  });
-
-  it('should not shrink below initial size', () => {
-    const pool = new GrowthProgressPool({
-      initialSize: 64,
-      devMode: false,
-      shrinkThreshold: 0.25,
-      lowUsageFramesBeforeShrink: 2,
-    });
-
-    // Run many low-usage frames
-    for (let f = 0; f < 20; f++) {
-      pool.beginFrame();
-      pool.acquire();
-      pool.endFrame();
-    }
-
-    expect(pool.getStats().poolSize).toBe(64);
-  });
-});
-
-describe('Strict mode', () => {
-  it('should throw on nested beginFrame when strictMode is enabled', () => {
-    const pool = new GrowthProgressPool({ initialSize: 10, devMode: false, strictMode: true });
-    pool.beginFrame();
-
-    expect(() => pool.beginFrame()).toThrow(/already in frame/);
-
-    pool.endFrame();
-  });
-
-  it('should throw on endFrame outside frame when strictMode is enabled', () => {
-    const pool = new GrowthProgressPool({ initialSize: 10, devMode: false, strictMode: true });
-
-    expect(() => pool.endFrame()).toThrow(/outside of frame/);
-  });
-
-  it('should not throw when strictMode is disabled', () => {
-    const pool = new GrowthProgressPool({ initialSize: 10, devMode: false, strictMode: false });
-    pool.beginFrame();
-
-    expect(() => pool.beginFrame()).not.toThrow();
-    expect(() => pool.endFrame()).not.toThrow();
-    expect(() => pool.endFrame()).not.toThrow(); // Extra endFrame should not throw
-  });
-});
-
-describe('Max size limit', () => {
-  it('should throw when max size is exceeded', () => {
-    const pool = new GrowthProgressPool({
-      initialSize: 8,
-      growthFactor: 2,
-      maxSize: 32,
-      devMode: false,
-    });
-
-    pool.beginFrame();
-    expect(() => {
-      for (let i = 0; i < 50; i++) {
-        pool.acquire();
-      }
-    }).toThrow(/Maximum size 32 exceeded/);
-    pool.endFrame();
-  });
-});
-
-describe('Frame history', () => {
-  it('should track frame history', () => {
-    const pool = new GrowthProgressPool({ initialSize: 64, devMode: false });
-
-    pool.beginFrame();
-    pool.acquire();
-    pool.acquire();
-    pool.acquire();
-    pool.endFrame();
-
-    pool.beginFrame();
-    pool.acquire();
-    pool.endFrame();
-
-    const history = pool.getFrameHistory();
-    expect(history.length).toBe(2);
-    expect(history[0].usage).toBe(3);
-    expect(history[1].usage).toBe(1);
-    expect(history[0].frameNumber).toBe(1);
-    expect(history[1].frameNumber).toBe(2);
-  });
-
-  it('should limit history size to max (60 frames)', () => {
-    const pool = new GrowthProgressPool({ initialSize: 64, devMode: false });
-
-    // Run 100 frames
-    for (let i = 0; i < 100; i++) {
-      pool.beginFrame();
-      pool.acquire();
-      pool.endFrame();
-    }
-
-    const history = pool.getFrameHistory();
-    expect(history.length).toBe(60); // Max history size
-    expect(history[0].frameNumber).toBe(41); // Oldest kept frame
-    expect(history[59].frameNumber).toBe(100); // Most recent frame
-  });
-});
-
-describe('Pool membership validation', () => {
-  it('should throw when validating object from different pool', () => {
-    const pool1 = new GrowthProgressPool({ initialSize: 10, devMode: true });
-    const pool2 = new GrowthProgressPool({ initialSize: 10, devMode: true });
-
-    pool1.beginFrame();
-    pool2.beginFrame();
-
-    const obj1 = pool1.acquire();
-    // Try to validate obj1 against pool2
-    expect(() => pool2.validateObject(obj1)).toThrow(/not from this pool/);
-
-    pool1.endFrame();
-    pool2.endFrame();
-  });
-});
-
-describe('disposeDefaultPool', () => {
-  it('should dispose and recreate default pool', async () => {
-    const { getDefaultPool, disposeDefaultPool, resetDefaultPool } = await import('./GrowthProgressPool');
-    resetDefaultPool();
-
-    const pool1 = getDefaultPool();
-    pool1.beginFrame();
-    pool1.acquire();
-    pool1.endFrame();
-
-    expect(pool1.getStats().acquired).toBe(1);
-
+  it('disposeDefaultPool makes the next getDefaultPool create a fresh instance', () => {
+    const first = getDefaultPool();
+    first.beginFrame();
+    first.acquire();
+    first.endFrame();
     disposeDefaultPool();
-
-    const pool2 = getDefaultPool();
-    expect(pool2).not.toBe(pool1);
-    expect(pool2.getStats().acquired).toBe(0);
-
-    // Clean up
-    resetDefaultPool();
-  });
-});
-
-describe('Multiple pool instances', () => {
-  it('should isolate state between pool instances', () => {
-    const pool1 = new GrowthProgressPool({ initialSize: 10, devMode: true });
-    const pool2 = new GrowthProgressPool({ initialSize: 10, devMode: true });
-
-    pool1.beginFrame();
-    pool2.beginFrame();
-
-    const obj1 = pool1.acquire();
-    const obj2 = pool2.acquire();
-
-    expect(obj1).not.toBe(obj2);
-    expect(pool1.getStats().currentFrameUsage).toBe(1);
-    expect(pool2.getStats().currentFrameUsage).toBe(1);
-
-    pool1.endFrame();
-    expect(pool1.isInFrame()).toBe(false);
-    expect(pool2.isInFrame()).toBe(true);
-
-    pool2.endFrame();
+    const second = getDefaultPool();
+    expect(second).not.toBe(first);
+    expect(second.getStats().acquired).toBe(0);
   });
 });

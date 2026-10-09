@@ -235,18 +235,19 @@ export enum PlantType {
  * - warm: Reds, oranges, yellows with olive foliage
  * - cool: Purples, blues, lavenders with teal foliage
  * - vibrant: Saturated rainbow colors
- * - grayscale: True achromatic (ignores accent entirely)
+ * - grayscale: Neutral grays only, R = G = B (ignores accent entirely)
  * - monotone: Single-hue tints/shades derived from accent color
  */
 export type ColorPalette = 'natural' | 'warm' | 'cool' | 'grayscale' | 'vibrant' | 'monotone';
 
 /**
- * Timing curve presets for generation pacing
+ * Timing curve presets for generation pacing. The share of generations
+ * started by time t follows the named easing curve.
  * - 'linear': Equal time per generation (default)
- * - 'ease-out': Fast start, slow end (early gens grow quickly)
+ * - 'ease-out': Fast start, slow end (early generations arrive quickly)
  * - 'ease-in': Slow start, fast end
  * - 'ease-in-out': Slow-fast-slow
- * - number: Custom exponent (>1 = ease-out effect, <1 = ease-in effect)
+ * - number: Custom exponent (>1 = ease-out of that power, <1 = ease-in of power 1/e)
  */
 export type TimingCurve = 'linear' | 'ease-out' | 'ease-in' | 'ease-in-out' | number;
 
@@ -298,7 +299,8 @@ export interface ColorOptions {
  */
 export interface GardenEvents {
   /**
-   * Called when a generation completes
+   * Called when a generation is fully grown: every plant in generations
+   * 1..generation has finished growing. Fires once per generation, in order.
    */
   onGenerationComplete?: (generation: number, totalGenerations: number) => void;
 
@@ -340,12 +342,15 @@ export interface GardenOptions {
   generations?: number;
 
   /**
-   * Maximum height as fraction of container (0-1)
-   * Also controls which plant categories appear:
-   * - 0.35 (default): Ground plants only (grass, flowers, bushes)
-   * - 0.5+: Adds tall flowers and giant grasses
-   * - 0.7+: Adds climbers and tropical plants
-   * - 1.0: Full garden with trees and conifers
+   * Maximum plant (stem) height as fraction of container (0-1); flower
+   * heads, spikes and plumes can rise above it
+   * Also controls which plant categories appear (each unlocks once
+   * maxHeight reaches its minimum height):
+   * - below 0.30: Ground plants only (grass, flowers, bushes, ...)
+   * - 0.30+: Tall flowers (included at the 0.35 default)
+   * - 0.40+: Giant grasses
+   * - 0.50+: Climbers and tropical plants
+   * - 0.55+: Conifers; 0.60+: Small trees
    * @default 0.35
    */
   maxHeight?: number;
@@ -417,7 +422,7 @@ export interface GardenOptions {
    * Timing curve for generation pacing
    * Controls how time is distributed across generations
    * - 'linear': Equal time per generation (default)
-   * - 'ease-out': Fast start, slow end (early gens complete quickly)
+   * - 'ease-out': Fast start, slow end (early generations arrive quickly)
    * - 'ease-in': Slow start, fast end
    * - 'ease-in-out': Slow-fast-slow
    * - number: Custom exponent (>1 = ease-out, <1 = ease-in)
@@ -447,14 +452,15 @@ export interface GardenOptions {
 
   /**
    * Height of fade-out zone as fraction of container (0-1)
-   * Plants will fade to transparent over this distance from their max height
+   * Plants fade into fadeColor over this distance below the maxHeight line
    * Set to 0 to disable fading
    * @default 0
    */
   fadeHeight?: number;
 
   /**
-   * Color to fade into (should match page background)
+   * Color to fade into (should match page background). Hex, named, RGB or HSL;
+   * a fully transparent color (e.g. 'transparent') fades plants out instead.
    * Only used when fadeHeight > 0
    * @default '#ffffff'
    */

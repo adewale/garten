@@ -14,6 +14,23 @@ interface Listener<T> {
 }
 
 /**
+ * Remove one listener, dropping the event's set once it is empty. Only the
+ * set currently registered for the event is dropped: a handler that empties
+ * the set and then subscribes again during an emit must keep its new set.
+ */
+function removeListener<E>(
+  registry: Map<E, Set<Listener<unknown>>>,
+  event: E,
+  listeners: Set<Listener<unknown>>,
+  listener: Listener<unknown>
+): void {
+  listeners.delete(listener);
+  if (listeners.size === 0 && registry.get(event) === listeners) {
+    registry.delete(event);
+  }
+}
+
+/**
  * EventEmitter class - Type-safe event emitter
  *
  * Usage:
@@ -99,15 +116,11 @@ export class EventEmitter {
 
     for (const listener of listeners) {
       if (listener.handler === handler) {
-        listeners.delete(listener);
-        break;
+        removeListener(this.listeners, event, listeners, listener);
+        return;
       }
     }
 
-    // Clean up empty sets
-    if (listeners.size === 0) {
-      this.listeners.delete(event);
-    }
   }
 
   /**
@@ -119,27 +132,18 @@ export class EventEmitter {
     const listeners = this.listeners.get(event);
     if (!listeners) return;
 
-    const toRemove: Listener<unknown>[] = [];
-
-    for (const listener of listeners) {
+    // Re-entrancy follows DOM EventTarget / Node semantics: iterate a
+    // snapshot (listeners added during this emit wait for the next one),
+    // skip listeners an earlier handler removed, and remove a once listener
+    // before calling it (so a handler that re-emits cannot fire it twice)
+    for (const listener of [...listeners]) {
+      if (!listeners.has(listener)) continue;
+      if (listener.once) removeListener(this.listeners, event, listeners, listener);
       try {
         (listener.handler as GardenEventHandler<GardenEventData[K]>)(data);
       } catch (error) {
         console.error(`Error in event handler for "${event}":`, error);
       }
-
-      if (listener.once) {
-        toRemove.push(listener);
-      }
-    }
-
-    // Remove once listeners
-    for (const listener of toRemove) {
-      listeners.delete(listener);
-    }
-
-    if (listeners.size === 0) {
-      this.listeners.delete(event);
     }
   }
 
@@ -228,40 +232,26 @@ export class SimpleEventEmitter<EventMap extends Record<string, unknown>> {
 
     for (const listener of listeners) {
       if (listener.handler === handler) {
-        listeners.delete(listener);
-        break;
+        removeListener(this.listeners, event, listeners, listener);
+        return;
       }
     }
 
-    if (listeners.size === 0) {
-      this.listeners.delete(event);
-    }
   }
 
   emit<K extends keyof EventMap>(event: K, data: EventMap[K]): void {
     const listeners = this.listeners.get(event);
     if (!listeners) return;
 
-    const toRemove: Listener<unknown>[] = [];
-
-    for (const listener of listeners) {
+    // Same re-entrancy rules as EventEmitter.emit
+    for (const listener of [...listeners]) {
+      if (!listeners.has(listener)) continue;
+      if (listener.once) removeListener(this.listeners, event, listeners, listener);
       try {
         listener.handler(data);
       } catch (error) {
         console.error(`Error in event handler for "${String(event)}":`, error);
       }
-
-      if (listener.once) {
-        toRemove.push(listener);
-      }
-    }
-
-    for (const listener of toRemove) {
-      listeners.delete(listener);
-    }
-
-    if (listeners.size === 0) {
-      this.listeners.delete(event);
     }
   }
 

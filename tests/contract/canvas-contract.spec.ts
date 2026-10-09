@@ -116,29 +116,42 @@ test('mock rule: save()/restore() restores fillStyle and globalAlpha', async ({ 
     ctx.save();
     ctx.fillStyle = '#0000ff';
     ctx.globalAlpha = 0.2;
+    ctx.translate(20, 20);
+    ctx.rotate(0.5);
+    ctx.globalCompositeOperation = 'destination-out';
     ctx.restore();
 
     ctx.fillRect(0, 0, 10, 10);
     const [r, g, b, a] = ctx.getImageData(5, 5, 1, 1).data;
-    return { r, g, b, a, alphaProp: ctx.globalAlpha };
+    const m = ctx.getTransform();
+    return { r, g, b, a, alphaProp: ctx.globalAlpha,
+      composite: ctx.globalCompositeOperation, transform: [m.a, m.b, m.c, m.d, m.e, m.f] };
   });
 
   expect(result.alphaProp).toBe(1);
+  expect(result.composite).toBe('source-over');
+  expect(result.transform).toEqual([1, 0, 0, 1, 0, 0]);
   expect([result.r, result.g, result.b, result.a]).toEqual([255, 0, 0, 255]);
 });
 
+
 test('mock rule: restore() without save() is a silent no-op', async ({ page }) => {
-  const threw = await page.evaluate(() => {
+  // No throw, and no state change: the style and transform set before the
+  // unmatched restore() survive it
+  const result = await page.evaluate(() => {
     const ctx = document.createElement('canvas').getContext('2d')!;
+    ctx.fillStyle = '#ff0000';
+    ctx.translate(3, 4);
     try {
       ctx.restore();
       ctx.restore();
-      return false;
     } catch {
-      return true;
+      return { threw: true, fillStyle: '', transform: [] as number[] };
     }
+    const m = ctx.getTransform();
+    return { threw: false, fillStyle: String(ctx.fillStyle), transform: [m.a, m.b, m.c, m.d, m.e, m.f] };
   });
-  expect(threw).toBe(false);
+  expect(result).toEqual({ threw: false, fillStyle: '#ff0000', transform: [1, 0, 0, 1, 3, 4] });
 });
 
 test('renderer assumption: paths are baked in user space at construction (drawLeaf pattern)', async ({

@@ -5,6 +5,121 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed (behavior you will notice)
+
+- **Timing curves now pace the way the docs always described.** Since the
+  first release the easing curve was applied to generation → time instead of
+  time → generations, so every named curve did the opposite of its
+  description (`'ease-out'` started slowly). The fraction of generations
+  started by time `t` now follows the named curve (the same meaning as
+  `GrowthProgress.eased`): `'ease-out'` brings new generations quickly at
+  first and then slows down, `'ease-in'` starts slowly and speeds up,
+  `'ease-in-out'` is slow at both ends. A numeric `e > 1` is ease-out of
+  power `e`, `e < 1` is ease-in of power `1/e` (clamped to 0.1-10).
+  Gardens using `'ease-in'`, `'ease-out'`, `'ease-in-out'` or a numeric
+  curve other than 1 now pace differently; swap to the opposite curve
+  (or `1/e`) to approximate the old pacing. `'linear'` is unchanged.
+- **`fadeHeight`/`fadeColor` now work as documented.** The fade zone is the
+  top `fadeHeight` (fraction of container height) of the plant area,
+  measured down from the `maxHeight` line; plants blend into `fadeColor`,
+  fully at the `maxHeight` line and not at all at the bottom of the zone.
+  Only drawn pixels are tinted, so a transparent canvas stays transparent.
+  `fadeColor` accepts hex, named, RGB and HSL colors, and a fully transparent one
+  (`'transparent'`) fades plants out to transparent instead. Anything a
+  browser would not accept as a color (including hex without `#`, such as
+  `'abc'`) logs one warning and disables the fade. Previously the zone
+  sat *above* the `maxHeight` line (so it only touched plant tops that
+  overshot it), `fadeColor` was ignored (the fade erased to transparent),
+  non-hex colors disabled it, and with an opaque `background` it cut a
+  transparent band through the background.
+  Wide-gamut `color()`, `lab()` and `oklch()` syntax remains unsupported;
+  rejected colors are cached rather than reparsed on every frame.
+- **`maxHeight` now caps every plant's stem height.** Each plant's height is
+  clamped so that height × its variation's `heightMultiplier` never exceeds
+  `maxHeight` (flower heads, spikes and plumes can still rise above it). Before, about 3-4% of a default garden's plants were drawn
+  above it (19 of 527 with seed 12345), reaching 0.49 of the container at
+  the default 0.35.
+
+### Fixed
+
+- `generationComplete` / `onGenerationComplete` fired on even time slices
+  regardless of the timing curve, often while that generation's plants were
+  still growing. It now fires for generation `g` once every plant in
+  generations 1 to `g` has finished growing. It still fires once per
+  generation, in order, with catch-up after background tabs; `seek()` still
+  fires no events; the last one fires at the end of the duration
+- `applyTheme(name, { fadeColor })`: an explicit `fadeColor` in the options
+  now wins over the theme's (matching how explicit `colors` already win);
+  before, the theme silently overrode it
+- Seeds wrap modulo 1e9 into [0, 1e9) exactly: in-range seeds (fractional
+  ones included) are kept as given (`0.3` used to become
+  `0.2999999523162842`), and resolving is idempotent. Seeds that differ by
+  a multiple of 1e9 (e.g. `-1` and `999999999`) give the same garden
+- `resolveOptions` no longer crashes on non-string `categories` or custom
+  color entries (they are dropped with a warning), and an unknown
+  `timingCurve` name falls back to `'linear'` with a warning instead of
+  passing through
+- A plant is drawn exactly fully grown from its end time on (rounding left
+  it a hair short at `time === delay + growDuration`), and no generated
+  plant overruns the duration or `maxHeight` by a rounding error
+- `'ease-in-out'` start times now invert `GrowthProgress.eased('ease-in-out')`
+  as documented, start exactly at 0 and end exactly at 1, and the late half
+  mirrors the early half
+- `applyPreset`/`createConfig`: an explicit `undefined` option no longer
+  erases the preset's or theme's value
+- `EventEmitter`/`SimpleEventEmitter` follow DOM/Node re-entrancy rules: a
+  `once` listener fires at most once even if its handler re-emits; a
+  listener added during an emit waits for the next emit; a handler that
+  unsubscribes itself and subscribes a replacement keeps the replacement
+- Value objects and helpers at the edges of their domains:
+  - `Color.fromHex` accepts only an optional `#` and 3, 6 or 8 hex digits
+    (`'#1g2233'` and `'ab#cdef'` used to parse); `Color.parse` rejects
+    surrounding garbage and accepts exponent-notation alphas it emits;
+    NaN channels become 0 and NaN alpha 1
+  - `Vec2` lengths and distances use `Math.hypot` (no overflow/underflow);
+    `lerp` (and `Color.mix`) return exact endpoints; `moveTowards` lands
+    exactly on a target within reach
+  - `SeededRandom`/`createRandom` agree for every seed (non-finite seeds
+    are 0 in both; seeds beyond 2^53 no longer repeat one value forever,
+    which made `pickMultiple` hang); `range`/`randomRange` never return
+    `max`; `weightedPick` never picks a zero-weight item
+  - `GrowthProgress` helpers agree with the class on NaN input and at the
+    start time; `ease-out`/`ease-in-out` are monotone at full precision
+  - `GrowthProgressPool` always grows by at least one object (small pools
+    with a 1.1 growth factor used to stall) and accepts fractional sizes
+  - `drawStem`/`drawLeaf` reject NaN growth and size
+- Docs: `regenerate()` keeps the current seed (use `setOptions({ seed })`
+  for a new garden); `maxHeight` category thresholds and tall-plant shares
+  match the generator; `events` and `on()` are described as four callbacks
+  vs. nine events, not as equivalent; architecture notes match the code
+
+### Removed
+
+- Dead internal `densityPreset`/`speedPreset` helpers in `src/presets.ts`
+  (not exported since 1.0.1)
+
+### Testing
+
+- Property contracts replace weaker examples with bounded campaigns and
+  pinned regressions; no defect-replay workflow or mutation-testing
+  expansion is added.
+- `SeededRandom.skip` retains constant-time numeric advancement and rejects
+  invalid counts; malformed decimal alpha tokens no longer parse as colours.
+- Mutation testing is now on demand only (`workflow_dispatch` on `ci.yml`);
+  the weekly scheduled run listed under 1.1.0 was removed after re-scoring
+  unchanged `main` with the same result every week. Stryker is now an
+  occasional audit tool rather than a gate, so its `break` threshold stays
+  unset; the existing verification and Chromium jobs are the per-change gates
+- Category-registry tests: every `PlantType` is grown through exactly one
+  public category filter, and each category name grows the plant it is
+  named for
+- Suite upgrades: copied counts and source-text pins replaced with checks
+  derived from the code, word-bounded doc count checks, a non-vacuous
+  painter-ordering test, README option-default and speed-bound doc-sync
+  checks, and documented Playwright/Chromium versions for the goldens
+
 ## [1.1.0] - 2026-06-10
 
 Fixes every finding from the June 2026 audit (`docs/audit-report-2026-06.md`).
